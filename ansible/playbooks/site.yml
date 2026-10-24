@@ -1,4 +1,0 @@
-- name: Configure hosts
-  hosts: all
-  become: true
-  roles: []

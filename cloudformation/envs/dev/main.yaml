@@ -1,0 +1,14 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: accs dev environment root stack
+
+Parameters:
+  Project:
+    Type: String
+    Default: accs
+
+Resources:
+  # CloudFormation requires at least one resource; replace once real resources exist.
+  Placeholder:
+    Type: AWS::CloudFormation::WaitConditionHandle
+
+Outputs: {}
