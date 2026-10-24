@@ -5,10 +5,61 @@ Parameters:
   Project:
     Type: String
     Default: accs
+  ApiCodeBucket:
+    Type: String
+  ApiCodeKey:
+    Type: String
 
 Resources:
-  # CloudFormation requires at least one resource; replace once real resources exist.
-  Placeholder:
-    Type: AWS::CloudFormation::WaitConditionHandle
+  LandingSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-landing
 
-Outputs: {}
+  MeetingSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: meeting-at-10-website
+
+  AppSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-frontend
+        Spa: "true"
+
+  Api:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/api.yaml
+      Parameters:
+        CodeBucket: !Ref ApiCodeBucket
+        CodeKey: !Ref ApiCodeKey
+        CorsOrigin: !GetAtt AppSite.Outputs.Url
+
+Outputs:
+  LandingUrl:
+    Value: !GetAtt LandingSite.Outputs.Url
+  LandingBucket:
+    Value: !GetAtt LandingSite.Outputs.BucketName
+  LandingDistributionId:
+    Value: !GetAtt LandingSite.Outputs.DistributionId
+  MeetingUrl:
+    Value: !GetAtt MeetingSite.Outputs.Url
+  MeetingBucket:
+    Value: !GetAtt MeetingSite.Outputs.BucketName
+  MeetingDistributionId:
+    Value: !GetAtt MeetingSite.Outputs.DistributionId
+  AppUrl:
+    Value: !GetAtt AppSite.Outputs.Url
+  AppBucket:
+    Value: !GetAtt AppSite.Outputs.BucketName
+  AppDistributionId:
+    Value: !GetAtt AppSite.Outputs.DistributionId
+  ApiUrl:
+    Value: !GetAtt Api.Outputs.Url
