@@ -23,7 +23,7 @@ aws s3api head-bucket --bucket "$ARTIFACTS" 2>/dev/null ||
 echo "== backend"
 (cd "$BACKEND" && npm ci && npm run build:lambda)
 ZIP=$(mktemp -d)/api.zip
-(cd "$BACKEND/dist-lambda" && zip -qj "$ZIP" index.mjs)
+(cd "$BACKEND/dist-lambda" && zip -qj "$ZIP" index.cjs)
 KEY="api/$(sha256sum "$ZIP" | cut -c1-16).zip"
 aws s3 cp "$ZIP" "s3://$ARTIFACTS/$KEY"
 
