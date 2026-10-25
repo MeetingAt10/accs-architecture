@@ -8,6 +8,7 @@ AWS infrastructure provisioned with CloudFormation and configured with AWS Syste
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
 - `ssm/` — host configuration
   - `documents/` — SSM Command/Automation documents, applied via State Manager associations declared in CloudFormation (`AWS::SSM::Association`), targeting instances by tag
+- `iam/` — inline policies of the IAM users (users and access keys are created by hand, see Access)
 - `adr/` — architecture decision records (one per decision)
 - `diagrams/` — system, deployment, and data-flow diagrams
 
@@ -123,3 +124,17 @@ pcore scripts/deploy-dev.sh
 The script creates the `accs-dev-artifacts-<account>` bucket on first run, uploads the API bundle and nested templates there, deploys stack `accs-dev`, then syncs each site and invalidates CloudFront. Override with `AWS_PROFILE`, `STACK`, or `*_DIR` env vars.
 
 Sites get default `*.cloudfront.net` URLs; no custom domain yet.
+
+## Access (IAM users)
+
+Two IAM users with long-lived access keys, created by hand (not in CloudFormation, so no secret ever lands in a template or stack output). Keys are handed over as CSV files outside any repo and are never committed.
+
+| User | For | Permissions |
+|---|---|---|
+| `dev` | Local work: `deploy-dev.sh`, stack changes | `PowerUserAccess` + `iam/dev-user-policy.json` (manage `accs-*` roles and the GitHub OIDC provider, which the stacks create) |
+| `deploy` | App CI/CD | `iam/deploy-user-policy.json` only: read `accs-dev` outputs, sync the four site buckets, invalidate the four distributions, update the API Lambda code. No access to the artifacts bucket, so CI cannot alter the templates CloudFormation deploys |
+
+- `dev` can create `accs-*` roles with any policy, so treat its key like an admin key.
+- The deploy policy lists the four distribution IDs; update it if a site stack is recreated: `aws iam put-user-policy --user-name deploy --policy-name deploy-sites-and-api --policy-document file://iam/deploy-user-policy.json`.
+- The design system site does not use `deploy`: it publishes through `DesignDeployRole` (OIDC, ADR 0002).
+- Rotate a key: `aws iam create-access-key --user-name <user>`, switch consumers over, then `aws iam delete-access-key --user-name <user> --access-key-id <old>`.

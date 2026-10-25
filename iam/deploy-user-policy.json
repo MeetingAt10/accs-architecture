@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadStackOutputs",
+      "Effect": "Allow",
+      "Action": "cloudformation:DescribeStacks",
+      "Resource": "arn:aws:cloudformation:ap-southeast-1:128908383744:stack/accs-dev/*"
+    },
+    {
+      "Sid": "ListSiteBuckets",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::accs-dev-*site-*-bucket-*"
+    },
+    {
+      "Sid": "WriteSiteObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::accs-dev-*site-*-bucket-*/*"
+    },
+    {
+      "Sid": "InvalidateCdn",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::128908383744:distribution/E1X5Q2IYQE0100",
+        "arn:aws:cloudfront::128908383744:distribution/E1OOCU9WAU2MYL",
+        "arn:aws:cloudfront::128908383744:distribution/E3A13OAUX9RKYM",
+        "arn:aws:cloudfront::128908383744:distribution/E2XLQ2K4SOL8NS"
+      ]
+    },
+    {
+      "Sid": "UpdateApiCode",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:UpdateFunctionCode",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration"
+      ],
+      "Resource": "arn:aws:lambda:ap-southeast-1:128908383744:function:accs-dev-*"
+    }
+  ]
+}
