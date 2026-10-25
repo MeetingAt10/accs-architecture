@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Role GitHub Actions assumes through OIDC to publish one static site (S3 sync and CloudFront invalidation)
+
+Parameters:
+  Repository:
+    Type: String
+    Description: GitHub owner/name allowed to assume the role
+  RefPattern:
+    Type: String
+    Default: refs/tags/v*
+    Description: Git ref pattern allowed to assume the role (release tags by default)
+  BucketName:
+    Type: String
+  DistributionId:
+    Type: String
+  OidcProviderArn:
+    Type: String
+    Default: ""
+    Description: ARN of an existing token.actions.githubusercontent.com provider; empty creates one (an account holds only one per URL)
+
+Conditions:
+  CreateProvider: !Equals [!Ref OidcProviderArn, ""]
+
+Resources:
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub GitHub Actions publish for ${Repository} (${RefPattern})
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref GithubOidcProvider, !Ref OidcProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${Repository}:ref:${RefPattern}
+      Policies:
+        - PolicyName: publish-site
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketName}
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketName}/*
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt Role.Arn

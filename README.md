@@ -3,8 +3,8 @@
 AWS infrastructure provisioned with CloudFormation and configured with AWS Systems Manager (SSM). System concept not defined yet.
 
 - `cloudformation/` — AWS provisioning
-  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API)
-  - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, accs-system frontend, accs-system backend
+  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
+  - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, accs-system frontend, accs-system backend, design system site (+ its deploy role)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
 - `ssm/` — host configuration
   - `documents/` — SSM Command/Automation documents, applied via State Manager associations declared in CloudFormation (`AWS::SSM::Association`), targeting instances by tag
@@ -49,6 +49,8 @@ flowchart LR
 - Buckets block all public access; only their own CloudFront distribution can read them (Origin Access Control).
 - Missing paths: the Next.js sites return `/404.html`, the frontend SPA falls back to `/index.html` for client-side routing.
 - The API only accepts browser requests from the frontend's CloudFront URL (`CORS_ORIGIN`).
+- The design system site (`DesignSite`) is not uploaded by `deploy-dev.sh`: pushing a `v*` tag in `MeetingAt10/meetingatten-design-system` runs its `deploy-site.yml`, which assumes `DesignDeployRole` through GitHub OIDC (no AWS keys in GitHub) and may only sync that bucket and invalidate that distribution. After the first stack deploy, set the repository variables `DESIGN_SITE_ROLE_ARN`, `DESIGN_SITE_BUCKET`, `DESIGN_SITE_DISTRIBUTION_ID` and `DESIGN_SITE_URL` from the `Design*` outputs. If the account already has a GitHub OIDC provider, pass its ARN as `GithubOidcProviderArn`.
+- The CloudFront Function leaves `.../opengraph-image` and `.../twitter-image` paths (optionally with a `-<hash>` suffix) alone: Next.js writes those images without an extension.
 
 ### CloudFormation stacks
 
@@ -58,6 +60,9 @@ flowchart TB
   root --> landing["LandingSite<br/>static-site.yaml"]
   root --> meeting["MeetingSite<br/>static-site.yaml"]
   root --> app["AppSite<br/>static-site.yaml · Spa=true"]
+  root --> design["DesignSite<br/>static-site.yaml"]
+  root --> role["DesignDeployRole<br/>github-deploy-role.yaml"]
+  design -. bucket + distribution .-> role
   root --> api["Api<br/>api.yaml"]
   app -. Url to CorsOrigin .-> api
 

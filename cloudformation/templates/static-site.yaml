@@ -40,6 +40,7 @@ Resources:
         SigningProtocol: sigv4
 
   # Maps /about and /about/ to /about/index.html (Next.js export with trailingSlash).
+  # Next.js Open Graph images are extensionless files (/page/opengraph-image, optionally -<hash>) and are served as-is.
   IndexRewrite:
     Type: AWS::CloudFront::Function
     Properties:
@@ -51,8 +52,9 @@ Resources:
       FunctionCode: |
         function handler(event) {
           var r = event.request;
+          var last = r.uri.split('/').pop();
           if (r.uri.endsWith('/')) r.uri += 'index.html';
-          else if (!r.uri.split('/').pop().includes('.')) r.uri += '/index.html';
+          else if (!last.includes('.') && !/^(opengraph|twitter)-image(-[a-z0-9]+)?$/.test(last)) r.uri += '/index.html';
           return r;
         }
 

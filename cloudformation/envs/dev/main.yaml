@@ -9,6 +9,13 @@ Parameters:
     Type: String
   ApiCodeKey:
     Type: String
+  DesignSystemRepository:
+    Type: String
+    Default: MeetingAt10/meetingatten-design-system
+  GithubOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Existing GitHub OIDC provider ARN in this account; empty creates one
 
 Resources:
   LandingSite:
@@ -32,6 +39,24 @@ Resources:
       Parameters:
         SiteName: !Sub ${Project}-frontend
         Spa: "true"
+
+  # Public design system showcase (built and uploaded by the design system repo's GitHub Actions).
+  DesignSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-design-system
+
+  DesignDeployRole:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/github-deploy-role.yaml
+      Parameters:
+        Repository: !Ref DesignSystemRepository
+        BucketName: !GetAtt DesignSite.Outputs.BucketName
+        DistributionId: !GetAtt DesignSite.Outputs.DistributionId
+        OidcProviderArn: !Ref GithubOidcProviderArn
 
   Api:
     Type: AWS::CloudFormation::Stack
@@ -61,5 +86,13 @@ Outputs:
     Value: !GetAtt AppSite.Outputs.BucketName
   AppDistributionId:
     Value: !GetAtt AppSite.Outputs.DistributionId
+  DesignUrl:
+    Value: !GetAtt DesignSite.Outputs.Url
+  DesignBucket:
+    Value: !GetAtt DesignSite.Outputs.BucketName
+  DesignDistributionId:
+    Value: !GetAtt DesignSite.Outputs.DistributionId
+  DesignDeployRoleArn:
+    Value: !GetAtt DesignDeployRole.Outputs.RoleArn
   ApiUrl:
     Value: !GetAtt Api.Outputs.Url
