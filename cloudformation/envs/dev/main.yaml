@@ -11,7 +11,8 @@ Parameters:
     Type: String
   DesignSystemRepository:
     Type: String
-    Default: MeetingAt10/meetingatten-design-system
+    Default: MeetingAt10@343086680/meetingatten-design-system@1431974802
+    Description: GitHub OIDC subject of the design system repo after "repo:" (immutable owner@id/name@id form; gh api repos/OWNER/REPO/actions/oidc/customization/sub)
   GithubOidcProviderArn:
     Type: String
     Default: ""

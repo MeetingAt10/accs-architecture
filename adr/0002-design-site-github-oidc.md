@@ -10,7 +10,7 @@ The design system (`MeetingAt10/meetingatten-design-system`) ships a public, sea
 ## Decision
 
 - Add `DesignSite`, a fourth `static-site.yaml` nested stack, to `envs/dev/main.yaml`.
-- Add `DesignDeployRole` (`templates/github-deploy-role.yaml`): an IAM role trusted through the GitHub OIDC provider, only for `repo:MeetingAt10/meetingatten-design-system:ref:refs/tags/v*`, allowed to list and write that one bucket and invalidate that one distribution.
+- Add `DesignDeployRole` (`templates/github-deploy-role.yaml`): an IAM role trusted through the GitHub OIDC provider, only for `repo:MeetingAt10@343086680/meetingatten-design-system@1431974802:ref:refs/tags/v*` (the repo's immutable OIDC subject: owner and repo IDs, so a renamed or re-created repo cannot match), allowed to list and write that one bucket and invalidate that one distribution.
 - The design system's `deploy-site.yml` workflow builds the site on tag push and uploads it with that role.
 
 ## Consequences

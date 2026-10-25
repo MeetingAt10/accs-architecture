@@ -4,7 +4,7 @@ Description: Role GitHub Actions assumes through OIDC to publish one static site
 Parameters:
   Repository:
     Type: String
-    Description: GitHub owner/name allowed to assume the role
+    Description: Repository part of the GitHub OIDC subject allowed to assume the role, after "repo:" (owner/name, or owner@id/name@id when the repo uses immutable subjects)
   RefPattern:
     Type: String
     Default: refs/tags/v*
