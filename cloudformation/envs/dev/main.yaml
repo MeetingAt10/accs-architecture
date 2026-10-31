@@ -41,6 +41,55 @@ Resources:
         SiteName: !Sub ${Project}-frontend
         Spa: "true"
 
+  # AppSite is the portal; the module sites below serve the same SPA build on their own hosts.
+  ForumsSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-forums
+        Spa: "true"
+
+  ScheduleSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-schedule
+        Spa: "true"
+
+  CasesSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-cases
+        Spa: "true"
+
+  EvaluationsSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-evaluations
+        Spa: "true"
+
+  RecordsSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-records
+        Spa: "true"
+
+  AdminSite:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/static-site.yaml
+      Parameters:
+        SiteName: !Sub ${Project}-admin
+        Spa: "true"
+
   # Public design system showcase (built and uploaded by the design system repo's GitHub Actions).
   DesignSite:
     Type: AWS::CloudFormation::Stack
@@ -66,7 +115,16 @@ Resources:
       Parameters:
         CodeBucket: !Ref ApiCodeBucket
         CodeKey: !Ref ApiCodeKey
-        CorsOrigin: !GetAtt AppSite.Outputs.Url
+        CorsOrigin: !Join
+          - ","
+          -
+            - !GetAtt AppSite.Outputs.Url
+            - !GetAtt ForumsSite.Outputs.Url
+            - !GetAtt ScheduleSite.Outputs.Url
+            - !GetAtt CasesSite.Outputs.Url
+            - !GetAtt EvaluationsSite.Outputs.Url
+            - !GetAtt RecordsSite.Outputs.Url
+            - !GetAtt AdminSite.Outputs.Url
 
 Outputs:
   LandingUrl:
@@ -87,6 +145,42 @@ Outputs:
     Value: !GetAtt AppSite.Outputs.BucketName
   AppDistributionId:
     Value: !GetAtt AppSite.Outputs.DistributionId
+  ForumsUrl:
+    Value: !GetAtt ForumsSite.Outputs.Url
+  ForumsBucket:
+    Value: !GetAtt ForumsSite.Outputs.BucketName
+  ForumsDistributionId:
+    Value: !GetAtt ForumsSite.Outputs.DistributionId
+  ScheduleUrl:
+    Value: !GetAtt ScheduleSite.Outputs.Url
+  ScheduleBucket:
+    Value: !GetAtt ScheduleSite.Outputs.BucketName
+  ScheduleDistributionId:
+    Value: !GetAtt ScheduleSite.Outputs.DistributionId
+  CasesUrl:
+    Value: !GetAtt CasesSite.Outputs.Url
+  CasesBucket:
+    Value: !GetAtt CasesSite.Outputs.BucketName
+  CasesDistributionId:
+    Value: !GetAtt CasesSite.Outputs.DistributionId
+  EvaluationsUrl:
+    Value: !GetAtt EvaluationsSite.Outputs.Url
+  EvaluationsBucket:
+    Value: !GetAtt EvaluationsSite.Outputs.BucketName
+  EvaluationsDistributionId:
+    Value: !GetAtt EvaluationsSite.Outputs.DistributionId
+  RecordsUrl:
+    Value: !GetAtt RecordsSite.Outputs.Url
+  RecordsBucket:
+    Value: !GetAtt RecordsSite.Outputs.BucketName
+  RecordsDistributionId:
+    Value: !GetAtt RecordsSite.Outputs.DistributionId
+  AdminUrl:
+    Value: !GetAtt AdminSite.Outputs.Url
+  AdminBucket:
+    Value: !GetAtt AdminSite.Outputs.BucketName
+  AdminDistributionId:
+    Value: !GetAtt AdminSite.Outputs.DistributionId
   DesignUrl:
     Value: !GetAtt DesignSite.Outputs.Url
   DesignBucket:
@@ -97,3 +191,14 @@ Outputs:
     Value: !GetAtt DesignDeployRole.Outputs.RoleArn
   ApiUrl:
     Value: !GetAtt Api.Outputs.Url
+  # JSON map of site key to URL, read by the frontend build (VITE_SITE_ORIGINS).
+  SiteOrigins:
+    Value: !Sub
+      - '{"portal":"${Portal}","forums":"${Forums}","schedule":"${Schedule}","cases":"${Cases}","evaluations":"${Evaluations}","records":"${Records}","admin":"${Admin}"}'
+      - Portal: !GetAtt AppSite.Outputs.Url
+        Forums: !GetAtt ForumsSite.Outputs.Url
+        Schedule: !GetAtt ScheduleSite.Outputs.Url
+        Cases: !GetAtt CasesSite.Outputs.Url
+        Evaluations: !GetAtt EvaluationsSite.Outputs.Url
+        Records: !GetAtt RecordsSite.Outputs.Url
+        Admin: !GetAtt AdminSite.Outputs.Url

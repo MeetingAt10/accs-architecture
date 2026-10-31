@@ -40,6 +40,7 @@ out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks
 
 publish() { # dir build-subdir output-prefix
   echo "== $1"
+  rm -rf "${1:?}/$2" "$1/.next" # a stale Turbopack cache can ship old CSS
   (cd "$1" && npm ci && npm run build)
   aws s3 sync "$1/$2" "s3://$(out "$3Bucket")" --delete
   aws cloudfront create-invalidation --distribution-id "$(out "$3DistributionId")" --paths '/*' >/dev/null
@@ -47,7 +48,11 @@ publish() { # dir build-subdir output-prefix
 
 publish "$LANDING" out Landing
 publish "$MEETING" out Meeting
-publish "$FRONTEND" dist App
+VITE_SITE_ORIGINS="$(out SiteOrigins)" publish "$FRONTEND" dist App
+for p in Forums Schedule Cases Evaluations Records Admin; do # module sites serve the same build
+  aws s3 sync "$FRONTEND/dist" "s3://$(out "${p}Bucket")" --delete
+  aws cloudfront create-invalidation --distribution-id "$(out "${p}DistributionId")" --paths '/*' >/dev/null
+done
 
 echo
-for k in LandingUrl MeetingUrl AppUrl ApiUrl; do printf '%-11s %s\n' "$k" "$(out $k)"; done
+for k in LandingUrl MeetingUrl AppUrl ForumsUrl ScheduleUrl CasesUrl EvaluationsUrl RecordsUrl AdminUrl ApiUrl; do printf '%-14s %s\n' "$k" "$(out $k)"; done

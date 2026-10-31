@@ -34,7 +34,13 @@
         "arn:aws:cloudfront::128908383744:distribution/E1X5Q2IYQE0100",
         "arn:aws:cloudfront::128908383744:distribution/E1OOCU9WAU2MYL",
         "arn:aws:cloudfront::128908383744:distribution/E3A13OAUX9RKYM",
-        "arn:aws:cloudfront::128908383744:distribution/E2XLQ2K4SOL8NS"
+        "arn:aws:cloudfront::128908383744:distribution/E2XLQ2K4SOL8NS",
+        "arn:aws:cloudfront::128908383744:distribution/E375GXWZZQM3VV",
+        "arn:aws:cloudfront::128908383744:distribution/E268EG2ERQ12O6",
+        "arn:aws:cloudfront::128908383744:distribution/E28MC43S1OI3IX",
+        "arn:aws:cloudfront::128908383744:distribution/E2QSOI1L3F9LAO",
+        "arn:aws:cloudfront::128908383744:distribution/E28JTG5ZKW0OHW",
+        "arn:aws:cloudfront::128908383744:distribution/E3AC279HK113D4"
       ]
     },
     {
