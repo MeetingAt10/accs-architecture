@@ -3,7 +3,7 @@
 AWS infrastructure provisioned with CloudFormation and configured with AWS Systems Manager (SSM).
 
 - `cloudformation/` — AWS provisioning
-  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (DynamoDB app table), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
+  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
   - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the seven accs-system app sites (portal + forums, schedule, cases, evaluations, records, admin), accs-system backend and its DynamoDB table, design system site (+ its deploy role)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
   - `scripts/deploy-app-sites.sh` — deploys only the ACCS app sites and API (never landing or meeting)
@@ -38,7 +38,7 @@ flowchart LR
     apigw["API Gateway<br/>HTTP API"]
     lambda["Lambda · Node 22 arm64<br/>Express app (accs-backend)"]
     logs[("CloudWatch Logs<br/>14-day retention")]
-    ddb[("DynamoDB · accs-dev-app<br/>single table, on-demand")]
+    ddb[("DynamoDB · 12 domain tables<br/>accs-dev-ccs_*, on-demand")]
   end
 
   user -->|HTTPS| cfLanding & cfMeeting & cfApp
@@ -53,7 +53,7 @@ flowchart LR
 - Buckets block all public access; only their own CloudFront distribution can read them (Origin Access Control).
 - Missing paths: the Next.js sites return `/404.html`, the frontend SPA falls back to `/index.html` for client-side routing.
 - Accounts: `api.yaml` creates a private, encrypted, versioned `AuthStoreBucket` (retained on stack delete). The Lambda gets `AUTH_STORE_BUCKET` and may only read/write `auth-store.json` in it (plus `ListBucket`, so a missing object reads as empty). It holds registered accounts and scrypt password hashes; the backend reads it with ETag caching and writes it with a conditional put, so registrations and password changes survive cold starts and are seen by every Lambda instance.
-- Database: `database.yaml` creates one DynamoDB table, `accs-dev-app` (on-demand, PITR, deletion protection, retained on stack delete, TTL on `expiresAt`). Generic keys `PK`/`SK` with overloaded indexes `GSI1` and `GSI2`; the key design per entity is in ADR 0003. The Lambda gets `TABLE_NAME` and item-level actions on the table and its indexes, but not `Scan`. The root stack outputs `TableName`. The auth store bucket stays until the backend moves accounts into the table (ADR 0003, Migration).
+- Database: `database.yaml` creates the twelve DynamoDB domain tables of the DOC006 data dictionary, named `accs-dev-ccs_identity`, `accs-dev-ccs_grievance`, … (on-demand, PITR, deletion protection, retained on stack delete; TTL on `ccs_identity`, `ccs_notification`, `ccs_assistant`). Generic keys `PK`/`SK` with overloaded indexes `GSI1`…`GSI6` (36 in total); tables, indexes, and deviations from DOC006 are in ADR 0004, which supersedes the single-table ADR 0003. The Lambda gets `TABLE_PREFIX` and item-level actions on the business tables and their indexes, but not `Scan`; on `ccs_audit` it may only add and read entries. The root stack outputs `TablePrefix`. The auth store bucket stays until the backend moves accounts into `ccs_identity`.
 - The API only accepts browser requests from the seven ACCS app sites' CloudFront URLs: `CORS_ORIGIN` is a comma-separated list the backend parses (`AppSite` plus the six module sites).
 - The app is seven CloudFront/S3 sites, all `static-site.yaml` with `Spa=true`, each serving the same frontend `dist/`: `AppSite` (the portal, its distribution and URL unchanged), `ForumsSite`, `ScheduleSite`, `CasesSite`, `EvaluationsSite`, `RecordsSite`, `AdminSite`. Outputs per site: `<Prefix>Url`, `<Prefix>Bucket`, `<Prefix>DistributionId` (prefix `App`, `Forums`, `Schedule`, `Cases`, `Evaluations`, `Records`, `Admin`). The `SiteOrigins` output is a JSON map of site key to URL (`{"portal":...,"forums":...,"admin":...}`) that the frontend build reads as `VITE_SITE_ORIGINS`.
 - The design system site (`DesignSite`) is not uploaded by `deploy-dev.sh`: pushing a `v*` tag in `MeetingAt10/meetingatten-design-system` runs its `deploy-site.yml`, which assumes `DesignDeployRole` through GitHub OIDC (no AWS keys in GitHub) and may only sync that bucket and invalidate that distribution. After the first stack deploy, set the repository variables `DESIGN_SITE_ROLE_ARN`, `DESIGN_SITE_BUCKET`, `DESIGN_SITE_DISTRIBUTION_ID` and `DESIGN_SITE_URL` from the `Design*` outputs. If the account already has a GitHub OIDC provider, pass its ARN as `GithubOidcProviderArn`. The repo issues immutable OIDC subjects (`repo:MeetingAt10@343086680/meetingatten-design-system@1431974802:...`), so `DesignSystemRepository` uses that form; a renamed or re-created repo cannot assume the role.
@@ -82,7 +82,7 @@ flowchart TB
   end
   subgraph dbt["database.yaml creates"]
     direction LR
-    t[(DynamoDB table<br/>PK/SK + GSI1 + GSI2)]
+    t[(12 DynamoDB tables<br/>PK/SK + GSI1..GSI6)]
   end
   subgraph apit["api.yaml creates"]
     direction LR

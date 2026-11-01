@@ -1,6 +1,6 @@
 # 0003. Use one DynamoDB table as the application database
 
-- Status: Accepted
+- Status: Superseded by [0004](0004-dynamodb-domain-tables.md)
 - Date: 2026-11-01
 
 ## Context

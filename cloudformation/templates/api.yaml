@@ -8,9 +8,8 @@ Parameters:
     Type: String
   CorsOrigin:
     Type: String
-  TableName:
-    Type: String
-  TableArn:
+  # Physical DynamoDB table names are <TablePrefix><domain table> (database.yaml, adr/0004).
+  TablePrefix:
     Type: String
 
 Resources:
@@ -83,8 +82,8 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt AuthStoreBucket.Arn
-        # Item-level access to the app table and its indexes. No Scan: every read goes through a key.
-        - PolicyName: app-table
+        # Item-level access to the business tables and their indexes. No Scan: every read goes through a key.
+        - PolicyName: domain-tables
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -99,8 +98,43 @@ Resources:
                   - dynamodb:BatchWriteItem
                   - dynamodb:ConditionCheckItem
                 Resource:
-                  - !Ref TableArn
-                  - !Sub ${TableArn}/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_identity
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_identity/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_academic
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_academic/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_community
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_community/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_messaging
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_messaging/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_moderation
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_moderation/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_scheduling
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_scheduling/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_grievance
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_grievance/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_evaluation
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_evaluation/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_discipline
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_discipline/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_notification
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_notification/index/*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_assistant
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_assistant/index/*
+        # The audit table is append-only: the API can add and read entries but never change or delete one.
+        - PolicyName: audit-table
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_audit
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}ccs_audit/index/*
 
   Function:
     Type: AWS::Lambda::Function
@@ -119,7 +153,7 @@ Resources:
           NODE_ENV: production
           CORS_ORIGIN: !Ref CorsOrigin
           AUTH_STORE_BUCKET: !Ref AuthStoreBucket
-          TABLE_NAME: !Ref TableName
+          TABLE_PREFIX: !Ref TablePrefix
 
   LogGroup:
     Type: AWS::Logs::LogGroup

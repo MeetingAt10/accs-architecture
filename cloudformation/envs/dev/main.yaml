@@ -113,17 +113,18 @@ Resources:
     Properties:
       TemplateURL: ../../templates/database.yaml
       Parameters:
-        TableName: !Sub ${Project}-dev-app
+        TablePrefix: !Sub ${Project}-dev-
 
   Api:
     Type: AWS::CloudFormation::Stack
+    # The Lambda's IAM policy names the tables by prefix, so create them first.
+    DependsOn: Database
     Properties:
       TemplateURL: ../../templates/api.yaml
       Parameters:
         CodeBucket: !Ref ApiCodeBucket
         CodeKey: !Ref ApiCodeKey
-        TableName: !GetAtt Database.Outputs.TableName
-        TableArn: !GetAtt Database.Outputs.TableArn
+        TablePrefix: !GetAtt Database.Outputs.TablePrefix
         CorsOrigin: !Join
           - ","
           -
@@ -200,8 +201,8 @@ Outputs:
     Value: !GetAtt DesignDeployRole.Outputs.RoleArn
   ApiUrl:
     Value: !GetAtt Api.Outputs.Url
-  TableName:
-    Value: !GetAtt Database.Outputs.TableName
+  TablePrefix:
+    Value: !GetAtt Database.Outputs.TablePrefix
   # JSON map of site key to URL, read by the frontend build (VITE_SITE_ORIGINS).
   SiteOrigins:
     Value: !Sub
