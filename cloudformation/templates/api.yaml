@@ -8,6 +8,10 @@ Parameters:
     Type: String
   CorsOrigin:
     Type: String
+  TableName:
+    Type: String
+  TableArn:
+    Type: String
 
 Resources:
   # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
@@ -79,6 +83,24 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt AuthStoreBucket.Arn
+        # Item-level access to the app table and its indexes. No Scan: every read goes through a key.
+        - PolicyName: app-table
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !Ref TableArn
+                  - !Sub ${TableArn}/index/*
 
   Function:
     Type: AWS::Lambda::Function
@@ -97,6 +119,7 @@ Resources:
           NODE_ENV: production
           CORS_ORIGIN: !Ref CorsOrigin
           AUTH_STORE_BUCKET: !Ref AuthStoreBucket
+          TABLE_NAME: !Ref TableName
 
   LogGroup:
     Type: AWS::Logs::LogGroup

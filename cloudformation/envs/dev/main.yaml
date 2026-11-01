@@ -108,6 +108,13 @@ Resources:
         DistributionId: !GetAtt DesignSite.Outputs.DistributionId
         OidcProviderArn: !Ref GithubOidcProviderArn
 
+  Database:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../../templates/database.yaml
+      Parameters:
+        TableName: !Sub ${Project}-dev-app
+
   Api:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -115,6 +122,8 @@ Resources:
       Parameters:
         CodeBucket: !Ref ApiCodeBucket
         CodeKey: !Ref ApiCodeKey
+        TableName: !GetAtt Database.Outputs.TableName
+        TableArn: !GetAtt Database.Outputs.TableArn
         CorsOrigin: !Join
           - ","
           -
@@ -191,6 +200,8 @@ Outputs:
     Value: !GetAtt DesignDeployRole.Outputs.RoleArn
   ApiUrl:
     Value: !GetAtt Api.Outputs.Url
+  TableName:
+    Value: !GetAtt Database.Outputs.TableName
   # JSON map of site key to URL, read by the frontend build (VITE_SITE_ORIGINS).
   SiteOrigins:
     Value: !Sub
