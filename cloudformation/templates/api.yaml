@@ -10,6 +10,51 @@ Parameters:
     Type: String
 
 Resources:
+  # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
+  AuthStoreBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  AuthStoreBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AuthStoreBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt AuthStoreBucket.Arn
+              - !Sub ${AuthStoreBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
   Role:
     Type: AWS::IAM::Role
     Properties:
@@ -22,6 +67,18 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: auth-store
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub ${AuthStoreBucket.Arn}/auth-store.json
+              # ListBucket turns a missing object into 404 instead of 403.
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt AuthStoreBucket.Arn
 
   Function:
     Type: AWS::Lambda::Function
@@ -39,6 +96,7 @@ Resources:
         Variables:
           NODE_ENV: production
           CORS_ORIGIN: !Ref CorsOrigin
+          AUTH_STORE_BUCKET: !Ref AuthStoreBucket
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -67,3 +125,5 @@ Outputs:
     Value: !GetAtt HttpApi.ApiEndpoint
   FunctionName:
     Value: !Ref Function
+  AuthStoreBucket:
+    Value: !Ref AuthStoreBucket
