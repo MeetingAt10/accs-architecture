@@ -1,0 +1,70 @@
+name: Deploy infrastructure
+
+# Lint every change to the templates; on main, deploy stack accs-dev when the change set is not empty.
+on:
+  push:
+    branches: [main]
+    paths: ["cloudformation/**", ".github/workflows/deploy-infra.yml"]
+  pull_request:
+    paths: ["cloudformation/**", ".github/workflows/deploy-infra.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: accs-dev-infra
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  STACK: accs-dev
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cfn-lint
+      # Warnings (W3002 local TemplateURL, resolved by `cloudformation package`) do not fail the job.
+      - run: cfn-lint --non-zero-exit-code error cloudformation/templates/*.yaml cloudformation/envs/dev/main.yaml
+
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: cloudformation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.INFRA_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate templates with CloudFormation
+        run: for f in templates/*.yaml envs/dev/main.yaml; do aws cloudformation validate-template --template-body "file://$f" >/dev/null; echo "valid $f"; done
+
+      - name: Package nested templates
+        run: |
+          ARTIFACTS="$STACK-artifacts-$(aws sts get-caller-identity --query Account --output text)"
+          aws cloudformation package --template-file envs/dev/main.yaml \
+            --s3-bucket "$ARTIFACTS" --s3-prefix templates --output-template-file packaged-dev.yaml
+
+      # Parameters keep their current stack values (ApiCodeKey is set by deploy-dev.sh; backend CI updates code directly).
+      - name: Deploy if changed
+        run: |
+          aws cloudformation deploy --template-file packaged-dev.yaml --stack-name "$STACK" \
+            --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
+            --tags Project=accs Environment=dev ManagedBy=cloudformation
+
+      - name: Stack outputs
+        if: always()
+        run: aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].[StackStatus,LastUpdatedTime]' --output text

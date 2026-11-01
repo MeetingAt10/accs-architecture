@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Role the accs-architecture repo's GitHub Actions assumes through OIDC to deploy the accs-dev CloudFormation stack (adr/0005)
+
+# Deployed on its own as stack accs-infra-ci, by hand, never by the workflow it serves:
+#   aws cloudformation deploy --template-file cloudformation/templates/github-infra-role.yaml \
+#     --stack-name accs-infra-ci --capabilities CAPABILITY_NAMED_IAM
+# The role name does not start with accs-, so the role cannot edit its own permissions or trust.
+
+Parameters:
+  Repository:
+    Type: String
+    Default: MeetingAt10@343086680/accs-architecture@1420955976
+    Description: GitHub OIDC subject of the architecture repo after "repo:" (immutable owner@id/name@id form; gh api repos/OWNER/REPO/actions/oidc/customization/sub)
+  Branch:
+    Type: String
+    Default: main
+  OidcProviderArn:
+    Type: String
+    Description: ARN of the account's token.actions.githubusercontent.com provider (created by the DesignDeployRole stack)
+
+Resources:
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-accs-infra-deploy
+      Description: !Sub GitHub Actions CloudFormation deploy for ${Repository} (${Branch})
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${Repository}:ref:refs/heads/${Branch}
+      # Same reach as the dev IAM user (iam/dev-user-policy.json): every service the stacks use,
+      # plus IAM limited to the roles the accs-dev stacks create and the GitHub OIDC provider.
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess
+      Policies:
+        - PolicyName: manage-accs-stack-roles
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: StackRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:UpdateRoleDescription
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:PassRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/accs-dev-*
+              - Sid: GithubOidcProvider
+                Effect: Allow
+                Action:
+                  - iam:GetOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                  - iam:UntagOpenIDConnectProvider
+                Resource: !Ref OidcProviderArn
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt Role.Arn

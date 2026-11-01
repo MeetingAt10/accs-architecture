@@ -5,6 +5,7 @@ AWS infrastructure provisioned with CloudFormation and configured with AWS Syste
 - `cloudformation/` — AWS provisioning
   - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
   - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the seven accs-system app sites (portal + forums, schedule, cases, evaluations, records, admin), accs-system backend and its DynamoDB table, design system site (+ its deploy role)
+- `.github/workflows/deploy-infra.yml` — CI: lints templates on every PR and push; on `main` validates and deploys stack `accs-dev` when the change set is not empty (ADR 0005)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
   - `scripts/deploy-app-sites.sh` — deploys only the ACCS app sites and API (never landing or meeting)
 - `ssm/` — host configuration
@@ -146,6 +147,18 @@ SKIP_STACK=1 pcore scripts/deploy-app-sites.sh   # sites only: skip backend buil
 It builds the frontend once with `VITE_API_URL` and `VITE_SITE_ORIGINS` from the stack outputs, then syncs the build to all seven buckets and invalidates each distribution. Set `SESSION_SECRET` in the environment to inline it into the Lambda bundle, as backend CI does; without it the API signs sessions with a random per-instance key.
 
 Sites get default `*.cloudfront.net` URLs; no custom domain yet.
+
+### CI deploy (`deploy-infra.yml`)
+
+Pushing to `main` with changes under `cloudformation/` deploys the stack: `cfn-lint`, then `validate-template`, `cloudformation package`, and `cloudformation deploy --no-fail-on-empty-changeset` (nothing deploys if nothing changed). Pull requests only lint. The job assumes `github-accs-infra-deploy` through GitHub OIDC (ARN in the repo variable `INFRA_DEPLOY_ROLE_ARN`); that role is in its own stack, `accs-infra-ci`, which you deploy by hand:
+
+```sh
+aws cloudformation deploy --template-file cloudformation/templates/github-infra-role.yaml \
+  --stack-name accs-infra-ci --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides OidcProviderArn=arn:aws:iam::128908383744:oidc-provider/token.actions.githubusercontent.com
+```
+
+Stack parameters keep their current values, so CI never changes `ApiCodeKey`. Run `deploy-dev.sh` when the sites or the API bundle need rebuilding too.
 
 ## Access (IAM users)
 
