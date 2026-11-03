@@ -1,6 +1,6 @@
 name: Deploy infrastructure
 
-# Lint every change to the templates; on main, deploy stack accs-dev when the change set is not empty.
+# Lint every change to the templates; on main, deploy accs-dev (the -dev hostnames) and then accs-prod (the plain hostnames), each only when its change set is not empty.
 on:
   push:
     branches: [main]
@@ -18,7 +18,6 @@ concurrency:
 
 env:
   AWS_REGION: ap-southeast-1
-  STACK: accs-dev
 
 jobs:
   validate:
@@ -54,17 +53,25 @@ jobs:
 
       - name: Package nested templates
         run: |
-          ARTIFACTS="$STACK-artifacts-$(aws sts get-caller-identity --query Account --output text)"
+          ARTIFACTS="accs-dev-artifacts-$(aws sts get-caller-identity --query Account --output text)"
           aws cloudformation package --template-file envs/dev/main.yaml \
             --s3-bucket "$ARTIFACTS" --s3-prefix templates --output-template-file packaged-dev.yaml
 
-      # Parameters keep their current stack values (ApiCodeKey is set by deploy-dev.sh; backend CI updates code directly).
-      - name: Deploy if changed
+      # Parameters not overridden keep their current stack values (ApiCodeKey is set by deploy-dev.sh; backend CI updates code directly).
+      - name: Deploy accs-dev if changed
         run: |
-          aws cloudformation deploy --template-file packaged-dev.yaml --stack-name "$STACK" \
+          aws cloudformation deploy --template-file packaged-dev.yaml --stack-name accs-dev \
             --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
             --tags Project=accs Environment=dev ManagedBy=cloudformation
 
+      - name: Deploy accs-prod if changed
+        run: |
+          aws cloudformation deploy --template-file packaged-dev.yaml --stack-name accs-prod \
+            --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
+            --parameter-overrides Env=prod HostSuffix= DesignRefPattern='refs/tags/v*' \
+              GithubOidcProviderArn="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):oidc-provider/token.actions.githubusercontent.com" \
+            --tags Project=accs Environment=prod ManagedBy=cloudformation
+
       - name: Stack outputs
         if: always()
-        run: aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].[StackStatus,LastUpdatedTime]' --output text
+        run: for s in accs-dev accs-prod; do aws cloudformation describe-stacks --stack-name "$s" --query 'Stacks[0].[StackName,StackStatus,LastUpdatedTime]' --output text; done

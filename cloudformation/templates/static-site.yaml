@@ -9,9 +9,27 @@ Parameters:
     AllowedValues: ["true", "false"]
     Default: "false"
     Description: true serves /index.html for unknown paths (client-side routing); false serves /404.html
+  DomainName:
+    Type: String
+    Default: ""
+    Description: Custom hostname (for example forums.access-ccs.com); empty keeps only the CloudFront default hostname
+  ExtraDomainName:
+    Type: String
+    Default: ""
+    Description: Optional second hostname on the same distribution (for example www.access-ccs.com)
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: us-east-1 ACM certificate covering the hostnames; required when DomainName is set
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: Route 53 hosted zone for the hostnames; required when DomainName is set
 
 Conditions:
   IsSpa: !Equals [!Ref Spa, "true"]
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+  HasExtraDomain: !And [!Condition HasDomain, !Not [!Equals [!Ref ExtraDomainName, ""]]]
 
 Resources:
   Bucket:
@@ -67,6 +85,16 @@ Resources:
         HttpVersion: http2and3
         PriceClass: PriceClass_200
         DefaultRootObject: index.html
+        Aliases: !If
+          - HasDomain
+          - !If [HasExtraDomain, [!Ref DomainName, !Ref ExtraDomainName], [!Ref DomainName]]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - !Ref AWS::NoValue
         Origins:
           - Id: s3
             DomainName: !GetAtt Bucket.RegionalDomainName
@@ -106,10 +134,40 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
 
+  # CloudFront alias records; Z2FDTNDATAQYW2 is the fixed hosted zone ID for every CloudFront distribution.
+  DnsRecords:
+    Type: AWS::Route53::RecordSetGroup
+    Condition: HasDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      RecordSets:
+        - Name: !Ref DomainName
+          Type: A
+          AliasTarget: {DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+        - Name: !Ref DomainName
+          Type: AAAA
+          AliasTarget: {DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+
+  ExtraDnsRecords:
+    Type: AWS::Route53::RecordSetGroup
+    Condition: HasExtraDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      RecordSets:
+        - Name: !Ref ExtraDomainName
+          Type: A
+          AliasTarget: {DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+        - Name: !Ref ExtraDomainName
+          Type: AAAA
+          AliasTarget: {DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+
 Outputs:
   BucketName:
     Value: !Ref Bucket
   DistributionId:
     Value: !Ref Distribution
   Url:
+    Value: !If [HasDomain, !Sub "https://${DomainName}", !Sub "https://${Distribution.DomainName}"]
+  # CloudFront default hostname; keeps working after a custom domain is added.
+  DefaultUrl:
     Value: !Sub https://${Distribution.DomainName}

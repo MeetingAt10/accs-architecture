@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ACM certificate for the site domain and its subdomains. CloudFront only accepts certificates from us-east-1, so deploy this stack there.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: access-ccs.com
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z09799202NPP9TLA01MFH
+
+Resources:
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub "*.${DomainName}"
+      ValidationMethod: DNS
+      # The apex and the wildcard share one validation record.
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+
+Outputs:
+  CertificateArn:
+    Value: !Ref Certificate

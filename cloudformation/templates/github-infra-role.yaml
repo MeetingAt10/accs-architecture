@@ -37,7 +37,7 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 token.actions.githubusercontent.com:sub: !Sub repo:${Repository}:ref:refs/heads/${Branch}
       # Same reach as the dev IAM user (iam/dev-user-policy.json): every service the stacks use,
-      # plus IAM limited to the roles the accs-dev stacks create and the GitHub OIDC provider.
+      # plus IAM limited to the roles the accs-dev and accs-prod stacks create and the GitHub OIDC provider.
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/PowerUserAccess
       Policies:
@@ -64,7 +64,9 @@ Resources:
                   - iam:DetachRolePolicy
                   - iam:ListAttachedRolePolicies
                   - iam:PassRole
-                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/accs-dev-*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/accs-dev-*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/accs-prod-*
               - Sid: GithubOidcProvider
                 Effect: Allow
                 Action:

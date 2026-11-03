@@ -5,7 +5,7 @@ AWS infrastructure provisioned with CloudFormation and configured with AWS Syste
 - `cloudformation/` — AWS provisioning
   - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
   - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the seven accs-system app sites (portal + forums, schedule, cases, evaluations, records, admin), accs-system backend and its DynamoDB table, design system site (+ its deploy role)
-- `.github/workflows/deploy-infra.yml` — CI: lints templates on every PR and push; on `main` validates and deploys stack `accs-dev` when the change set is not empty (ADR 0005)
+- `.github/workflows/deploy-infra.yml` — CI: lints templates on every PR and push; on `main` validates and deploys stacks `accs-dev` and then `accs-prod`, each when its change set is not empty (ADR 0005)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
   - `scripts/deploy-app-sites.sh` — deploys only the ACCS app sites and API (never landing or meeting)
 - `ssm/` — host configuration
@@ -146,7 +146,42 @@ SKIP_STACK=1 pcore scripts/deploy-app-sites.sh   # sites only: skip backend buil
 
 It builds the frontend once with `VITE_API_URL` and `VITE_SITE_ORIGINS` from the stack outputs, then syncs the build to all seven buckets and invalidates each distribution. Set `SESSION_SECRET` in the environment to inline it into the Lambda bundle, as backend CI does; without it the API signs sessions with a random per-instance key.
 
-Sites get default `*.cloudfront.net` URLs; no custom domain yet.
+### Environments and hostnames (`access-ccs.com`)
+
+`access-ccs.com` is registered with Route 53 in this account (hosted zone `Z09799202NPP9TLA01MFH`). The same root template, `envs/dev/main.yaml`, runs as two stacks:
+
+| Stack | Branch | `Env` | `HostSuffix` | Tables |
+|---|---|---|---|---|
+| `accs-prod` | `main` (design system: `v*` tags) | `prod` | empty | `accs-prod-ccs_*` |
+| `accs-dev` | `dev` (design system: `master`) | `dev` | `-dev` | `accs-dev-ccs_*` |
+
+| Site | Prod hostname | Dev hostname |
+|---|---|---|
+| Landing | `access-ccs.com`, `www.access-ccs.com` | none (prod only) |
+| Portal (Home) | `portal.access-ccs.com` | `portal-dev.access-ccs.com` |
+| Forums | `forums.access-ccs.com` | `forums-dev.access-ccs.com` |
+| Schedule | `schedule.access-ccs.com` | `schedule-dev.access-ccs.com` |
+| Cases | `cases.access-ccs.com` | `cases-dev.access-ccs.com` |
+| Evaluations | `evaluations.access-ccs.com` | `evaluations-dev.access-ccs.com` |
+| Records | `records.access-ccs.com` | `records-dev.access-ccs.com` |
+| Admin | `admin.access-ccs.com` | `admin-dev.access-ccs.com` |
+| Design system | `design.access-ccs.com` | `design-dev.access-ccs.com` |
+| Meeting At 10 | `team.access-ccs.com` | `team-dev.access-ccs.com` |
+
+Each stack has its own API, Lambda, tables and auth store, so dev data and accounts never reach prod. The stack name `accs-dev` predates the split; it is the dev environment.
+
+App CI picks the stack from the branch: `main` deploys to `accs-prod`, `dev` to `accs-dev` (frontend, backend and meeting@10; the landing deploys from `main` to `accs-prod` only). Backend CI reads the Lambda name from the stack output `ApiFunctionName`.
+
+CloudFront only accepts certificates from us-east-1, so the certificate for `access-ccs.com` and `*.access-ccs.com` lives in a separate stack, `accs-dev-certificate`, in us-east-1. Both environments share it. It validates itself through a DNS record in the hosted zone. Deploy it by hand, and pass its ARN to `envs/dev/main.yaml` as the `CertificateArn` default:
+
+```sh
+aws cloudformation deploy --region us-east-1 --template-file templates/certificate.yaml \
+  --stack-name accs-dev-certificate --no-fail-on-empty-changeset
+```
+
+`static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so `SiteOrigins` and the API's CORS list follow automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
+
+A hostname can sit on only one distribution, so moving a hostname between stacks means removing it from one stack before adding it to the other. Sites are created in two `DependsOn` chains because CloudFront rejects ten function creations at once ("Rate exceeded").
 
 ### CI deploy (`deploy-infra.yml`)
 
@@ -167,7 +202,7 @@ Two IAM users with long-lived access keys, created by hand (not in CloudFormatio
 | User | For | Permissions |
 |---|---|---|
 | `dev` | Local work: `deploy-dev.sh`, stack changes | `PowerUserAccess` + `iam/dev-user-policy.json` (manage `accs-*` roles and the GitHub OIDC provider, which the stacks create) |
-| `deploy` | App CI/CD | `iam/deploy-user-policy.json` only: read `accs-dev` outputs, sync the site buckets, invalidate the listed distributions, update the API Lambda code. No access to the artifacts bucket, so CI cannot alter the templates CloudFormation deploys |
+| `deploy` | App CI/CD | `iam/deploy-user-policy.json` only: read `accs-dev` and `accs-prod` outputs, sync the site buckets, invalidate the listed distributions, update the API Lambda code. No access to the artifacts bucket, so CI cannot alter the templates CloudFormation deploys |
 
 - `dev` can create `accs-*` roles with any policy, so treat its key like an admin key.
 - The deploy policy lists distribution IDs, not a wildcard (a wildcard would also allow invalidating landing and meeting). The site bucket pattern `accs-dev-*site-*-bucket-*` already covers the six new buckets, but after the first deploy that creates them, add their six `<Prefix>DistributionId` values to `InvalidateCdn`, and update it again if a site stack is recreated. Until then CI invalidation of the new sites fails with access denied: `aws iam put-user-policy --user-name deploy --policy-name deploy-sites-and-api --policy-document file://iam/deploy-user-policy.json`.

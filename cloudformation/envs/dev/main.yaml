@@ -1,10 +1,23 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: accs dev environment root stack
+Description: accs environment root stack (accs-dev on the -dev hostnames, accs-prod on the plain hostnames)
 
 Parameters:
   Project:
     Type: String
     Default: accs
+  Env:
+    Type: String
+    AllowedValues: [dev, prod]
+    Default: dev
+    Description: dev serves <site>-dev.<Domain> and has no landing site; prod serves <site>.<Domain> and the landing site on <Domain>
+  HostSuffix:
+    Type: String
+    Default: "-dev"
+    Description: Appended to each site label ("-dev" gives forums-dev.<Domain>); empty for prod
+  DesignRefPattern:
+    Type: String
+    Default: refs/heads/master
+    Description: Git ref of the design system repo allowed to publish this environment's design site (master for dev, refs/tags/v* for prod)
   ApiCodeBucket:
     Type: String
   ApiCodeKey:
@@ -13,17 +26,39 @@ Parameters:
     Type: String
     Default: MeetingAt10@343086680/meetingatten-design-system@1431974802
     Description: GitHub OIDC subject of the design system repo after "repo:" (immutable owner@id/name@id form; gh api repos/OWNER/REPO/actions/oidc/customization/sub)
+  Domain:
+    Type: String
+    Default: access-ccs.com
+    Description: Registered domain; each site gets a hostname under it
+  HostedZoneId:
+    Type: String
+    Default: Z09799202NPP9TLA01MFH
+  CertificateArn:
+    Type: String
+    Default: arn:aws:acm:us-east-1:128908383744:certificate/5269d843-185c-4a08-9800-cca434a5de5e
+    Description: us-east-1 ACM certificate for the domain and *.domain (stack accs-dev-certificate)
   GithubOidcProviderArn:
     Type: String
     Default: ""
     Description: Existing GitHub OIDC provider ARN in this account; empty creates one
 
+Conditions:
+  IsProd: !Equals [!Ref Env, prod]
+
 Resources:
+  # Sites are created in two chains (plus landing) so that a fresh stack does not create ten
+  # CloudFront functions at once, which CloudFront rejects with "Rate exceeded".
+  # The landing site exists only in prod.
   LandingSite:
     Type: AWS::CloudFormation::Stack
+    Condition: IsProd
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Ref Domain
+        ExtraDomainName: !Sub www.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-landing
 
   MeetingSite:
@@ -31,38 +66,57 @@ Resources:
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub team${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: meeting-at-10-website
 
   AppSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: MeetingSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub portal${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-frontend
         Spa: "true"
 
   # AppSite is the portal; the module sites below serve the same SPA build on their own hosts.
   ForumsSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: AppSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub forums${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-forums
         Spa: "true"
 
   ScheduleSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: ForumsSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub schedule${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-schedule
         Spa: "true"
 
   CasesSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: ScheduleSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub cases${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-cases
         Spa: "true"
 
@@ -71,31 +125,46 @@ Resources:
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub evaluations${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-evaluations
         Spa: "true"
 
   RecordsSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: EvaluationsSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub records${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-records
         Spa: "true"
 
   AdminSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: RecordsSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub admin${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-admin
         Spa: "true"
 
   # Public design system showcase (built and uploaded by the design system repo's GitHub Actions).
   DesignSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: AdminSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
+        DomainName: !Sub design${HostSuffix}.${Domain}
+        CertificateArn: !Ref CertificateArn
+        HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-design-system
 
   DesignDeployRole:
@@ -104,6 +173,7 @@ Resources:
       TemplateURL: ../../templates/github-deploy-role.yaml
       Parameters:
         Repository: !Ref DesignSystemRepository
+        RefPattern: !Ref DesignRefPattern
         BucketName: !GetAtt DesignSite.Outputs.BucketName
         DistributionId: !GetAtt DesignSite.Outputs.DistributionId
         OidcProviderArn: !Ref GithubOidcProviderArn
@@ -113,7 +183,7 @@ Resources:
     Properties:
       TemplateURL: ../../templates/database.yaml
       Parameters:
-        TablePrefix: !Sub ${Project}-dev-
+        TablePrefix: !Sub ${Project}-${Env}-
 
   Api:
     Type: AWS::CloudFormation::Stack
@@ -125,23 +195,34 @@ Resources:
         CodeBucket: !Ref ApiCodeBucket
         CodeKey: !Ref ApiCodeKey
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
+        # Custom hostnames plus the CloudFront defaults, so both keep working.
         CorsOrigin: !Join
           - ","
           -
             - !GetAtt AppSite.Outputs.Url
+            - !GetAtt AppSite.Outputs.DefaultUrl
             - !GetAtt ForumsSite.Outputs.Url
+            - !GetAtt ForumsSite.Outputs.DefaultUrl
             - !GetAtt ScheduleSite.Outputs.Url
+            - !GetAtt ScheduleSite.Outputs.DefaultUrl
             - !GetAtt CasesSite.Outputs.Url
+            - !GetAtt CasesSite.Outputs.DefaultUrl
             - !GetAtt EvaluationsSite.Outputs.Url
+            - !GetAtt EvaluationsSite.Outputs.DefaultUrl
             - !GetAtt RecordsSite.Outputs.Url
+            - !GetAtt RecordsSite.Outputs.DefaultUrl
             - !GetAtt AdminSite.Outputs.Url
+            - !GetAtt AdminSite.Outputs.DefaultUrl
 
 Outputs:
   LandingUrl:
+    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.Url
   LandingBucket:
+    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.BucketName
   LandingDistributionId:
+    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.DistributionId
   MeetingUrl:
     Value: !GetAtt MeetingSite.Outputs.Url
@@ -201,6 +282,9 @@ Outputs:
     Value: !GetAtt DesignDeployRole.Outputs.RoleArn
   ApiUrl:
     Value: !GetAtt Api.Outputs.Url
+  # Read by backend CI to update the Lambda code.
+  ApiFunctionName:
+    Value: !GetAtt Api.Outputs.FunctionName
   TablePrefix:
     Value: !GetAtt Database.Outputs.TablePrefix
   # JSON map of site key to URL, read by the frontend build (VITE_SITE_ORIGINS).
