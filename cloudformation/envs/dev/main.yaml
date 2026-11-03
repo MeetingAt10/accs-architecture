@@ -37,6 +37,11 @@ Parameters:
     Type: String
     Default: arn:aws:acm:us-east-1:128908383744:certificate/5269d843-185c-4a08-9800-cca434a5de5e
     Description: us-east-1 ACM certificate for the domain and *.domain (stack accs-dev-certificate)
+  SeedPassword:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Sign-in password of the seeded accounts in this environment. Set once by hand per stack; later deploys keep it.
   GithubOidcProviderArn:
     Type: String
     Default: ""
@@ -195,6 +200,7 @@ Resources:
         CodeBucket: !Ref ApiCodeBucket
         CodeKey: !Ref ApiCodeKey
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
+        SeedPassword: !Ref SeedPassword
         # Custom hostnames plus the CloudFront defaults, so both keep working.
         CorsOrigin: !Join
           - ","

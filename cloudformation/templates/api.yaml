@@ -11,6 +11,14 @@ Parameters:
   # Physical DynamoDB table names are <TablePrefix><domain table> (database.yaml, adr/0004).
   TablePrefix:
     Type: String
+  SeedPassword:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Sign-in password of the seeded accounts (SEED_PASSWORD); empty disables seeded sign-in
+
+Conditions:
+  HasSeedPassword: !Not [!Equals [!Ref SeedPassword, ""]]
 
 Resources:
   # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
@@ -154,6 +162,7 @@ Resources:
           CORS_ORIGIN: !Ref CorsOrigin
           AUTH_STORE_BUCKET: !Ref AuthStoreBucket
           TABLE_PREFIX: !Ref TablePrefix
+          SEED_PASSWORD: !If [HasSeedPassword, !Ref SeedPassword, !Ref AWS::NoValue]
 
   LogGroup:
     Type: AWS::Logs::LogGroup

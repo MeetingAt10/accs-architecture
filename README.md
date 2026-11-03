@@ -168,7 +168,7 @@ It builds the frontend once with `VITE_API_URL` and `VITE_SITE_ORIGINS` from the
 | Design system | `design.access-ccs.com` | `design-dev.access-ccs.com` |
 | Meeting At 10 | `team.access-ccs.com` | `team-dev.access-ccs.com` |
 
-Each stack has its own API, Lambda, tables and auth store, so dev data and accounts never reach prod. The stack name `accs-dev` predates the split; it is the dev environment.
+Each stack has its own API, Lambda, tables and auth store, so dev data and accounts never reach prod. The seeded accounts' shared password is the `NoEcho` stack parameter `SeedPassword` (Lambda `SEED_PASSWORD`), different per stack. Set it by hand with `aws cloudformation deploy ... --parameter-overrides SeedPassword='<value>'`; CI deploys keep the current value. When it is empty, the API disables seeded sign-in. The stack name `accs-dev` predates the split; it is the dev environment.
 
 App CI picks the stack from the branch: `main` deploys to `accs-prod`, `dev` to `accs-dev` (frontend, backend and meeting@10; the landing deploys from `main` to `accs-prod` only). Backend CI reads the Lambda name from the stack output `ApiFunctionName`.
 
