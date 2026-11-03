@@ -71,6 +71,7 @@ Resources:
                 Effect: Allow
                 Action:
                   - iam:GetOpenIDConnectProvider
+                  - iam:ListOpenIDConnectProviderTags
                   - iam:TagOpenIDConnectProvider
                   - iam:UntagOpenIDConnectProvider
                 Resource: !Ref OidcProviderArn
