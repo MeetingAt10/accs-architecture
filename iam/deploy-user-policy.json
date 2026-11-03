@@ -5,13 +5,19 @@
       "Sid": "ReadStackOutputs",
       "Effect": "Allow",
       "Action": "cloudformation:DescribeStacks",
-      "Resource": "arn:aws:cloudformation:ap-southeast-1:128908383744:stack/accs-dev/*"
+      "Resource": [
+        "arn:aws:cloudformation:ap-southeast-1:128908383744:stack/accs-dev/*",
+        "arn:aws:cloudformation:ap-southeast-1:128908383744:stack/accs-prod/*"
+      ]
     },
     {
       "Sid": "ListSiteBuckets",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::accs-dev-*site-*-bucket-*"
+      "Resource": [
+        "arn:aws:s3:::accs-dev-*site-*-bucket-*",
+        "arn:aws:s3:::accs-prod-*site-*-bucket-*"
+      ]
     },
     {
       "Sid": "WriteSiteObjects",
@@ -21,7 +27,10 @@
         "s3:PutObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws:s3:::accs-dev-*site-*-bucket-*/*"
+      "Resource": [
+        "arn:aws:s3:::accs-dev-*site-*-bucket-*/*",
+        "arn:aws:s3:::accs-prod-*site-*-bucket-*/*"
+      ]
     },
     {
       "Sid": "InvalidateCdn",
@@ -31,16 +40,25 @@
         "cloudfront:GetInvalidation"
       ],
       "Resource": [
-        "arn:aws:cloudfront::128908383744:distribution/E1X5Q2IYQE0100",
+        "arn:aws:cloudfront::128908383744:distribution/E1KQRD7U7KIA85",
+        "arn:aws:cloudfront::128908383744:distribution/E1N1OBMO7CXN",
         "arn:aws:cloudfront::128908383744:distribution/E1OOCU9WAU2MYL",
-        "arn:aws:cloudfront::128908383744:distribution/E3A13OAUX9RKYM",
+        "arn:aws:cloudfront::128908383744:distribution/E1V64KU2TVVOO9",
+        "arn:aws:cloudfront::128908383744:distribution/E22C514752DK7E",
+        "arn:aws:cloudfront::128908383744:distribution/E268EG2ERQ12O6",
+        "arn:aws:cloudfront::128908383744:distribution/E28JTG5ZKW0OHW",
+        "arn:aws:cloudfront::128908383744:distribution/E28MC43S1OI3IX",
+        "arn:aws:cloudfront::128908383744:distribution/E2D0TM4MNOIKDY",
+        "arn:aws:cloudfront::128908383744:distribution/E2JGBGIJSNJRZ9",
+        "arn:aws:cloudfront::128908383744:distribution/E2P0UV0A9GWYNA",
+        "arn:aws:cloudfront::128908383744:distribution/E2QSOI1L3F9LAO",
+        "arn:aws:cloudfront::128908383744:distribution/E2WGAXJFBOLJHS",
         "arn:aws:cloudfront::128908383744:distribution/E2XLQ2K4SOL8NS",
         "arn:aws:cloudfront::128908383744:distribution/E375GXWZZQM3VV",
-        "arn:aws:cloudfront::128908383744:distribution/E268EG2ERQ12O6",
-        "arn:aws:cloudfront::128908383744:distribution/E28MC43S1OI3IX",
-        "arn:aws:cloudfront::128908383744:distribution/E2QSOI1L3F9LAO",
-        "arn:aws:cloudfront::128908383744:distribution/E28JTG5ZKW0OHW",
-        "arn:aws:cloudfront::128908383744:distribution/E3AC279HK113D4"
+        "arn:aws:cloudfront::128908383744:distribution/E3A13OAUX9RKYM",
+        "arn:aws:cloudfront::128908383744:distribution/E3AC279HK113D4",
+        "arn:aws:cloudfront::128908383744:distribution/EX9FNMSQ8MN53",
+        "arn:aws:cloudfront::128908383744:distribution/EZCYUTI7W9SMS"
       ]
     },
     {
@@ -51,7 +69,10 @@
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration"
       ],
-      "Resource": "arn:aws:lambda:ap-southeast-1:128908383744:function:accs-dev-*"
+      "Resource": [
+        "arn:aws:lambda:ap-southeast-1:128908383744:function:accs-dev-*",
+        "arn:aws:lambda:ap-southeast-1:128908383744:function:accs-prod-*"
+      ]
     }
   ]
 }
