@@ -4,10 +4,10 @@ AWS infrastructure provisioned with CloudFormation and configured with AWS Syste
 
 - `cloudformation/` — AWS provisioning
   - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
-  - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the seven accs-system app sites (portal + forums, schedule, cases, evaluations, records, admin), accs-system backend and its DynamoDB table, design system site (+ its deploy role)
+  - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the accs-system portal site, accs-system backend and its DynamoDB table, design system site (+ its deploy role)
 - `.github/workflows/deploy-infra.yml` — CI: lints templates on every PR and push; on `main` validates and deploys stacks `accs-dev` and then `accs-prod`, each when its change set is not empty (ADR 0005)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
-  - `scripts/deploy-app-sites.sh` — deploys only the ACCS app sites and API (never landing or meeting)
+  - `scripts/deploy-app-sites.sh` — deploys only the ACCS portal and API (never landing or meeting)
 - `ssm/` — host configuration
   - `documents/` — SSM Command/Automation documents, applied via State Manager associations declared in CloudFormation (`AWS::SSM::Association`), targeting instances by tag
 - `iam/` — inline policies of the IAM users (users and access keys are created by hand, see Access)
@@ -55,8 +55,9 @@ flowchart LR
 - Missing paths: the Next.js sites return `/404.html`, the frontend SPA falls back to `/index.html` for client-side routing.
 - Accounts: `api.yaml` creates a private, encrypted, versioned `AuthStoreBucket` (retained on stack delete). The Lambda gets `AUTH_STORE_BUCKET` and may only read/write `auth-store.json` in it (plus `ListBucket`, so a missing object reads as empty). It holds registered accounts and scrypt password hashes; the backend reads it with ETag caching and writes it with a conditional put, so registrations and password changes survive cold starts and are seen by every Lambda instance.
 - Database: `database.yaml` creates the twelve DynamoDB domain tables of the DOC006 data dictionary, named `accs-dev-ccs_identity`, `accs-dev-ccs_grievance`, … (on-demand, PITR, deletion protection, retained on stack delete; TTL on `ccs_identity`, `ccs_notification`, `ccs_assistant`). Generic keys `PK`/`SK` with overloaded indexes `GSI1`…`GSI6` (36 in total); tables, indexes, and deviations from DOC006 are in ADR 0004, which supersedes the single-table ADR 0003. The Lambda gets `TABLE_PREFIX` and item-level actions on the business tables and their indexes, but not `Scan`; on `ccs_audit` it may only add and read entries. The root stack outputs `TablePrefix`. The auth store bucket stays until the backend moves accounts into `ccs_identity`.
-- The API only accepts browser requests from the seven ACCS app sites' CloudFront URLs: `CORS_ORIGIN` is a comma-separated list the backend parses (`AppSite` plus the six module sites).
-- The app is seven CloudFront/S3 sites, all `static-site.yaml` with `Spa=true`, each serving the same frontend `dist/`: `AppSite` (the portal, its distribution and URL unchanged), `ForumsSite`, `ScheduleSite`, `CasesSite`, `EvaluationsSite`, `RecordsSite`, `AdminSite`. Outputs per site: `<Prefix>Url`, `<Prefix>Bucket`, `<Prefix>DistributionId` (prefix `App`, `Forums`, `Schedule`, `Cases`, `Evaluations`, `Records`, `Admin`). The `SiteOrigins` output is a JSON map of site key to URL (`{"portal":...,"forums":...,"admin":...}`) that the frontend build reads as `VITE_SITE_ORIGINS`.
+- The API only accepts browser requests from the portal: `CORS_ORIGIN` is a comma-separated list the backend parses (`AppSite`'s custom hostname and its CloudFront default).
+- The app is one CloudFront/S3 site, `AppSite` (`static-site.yaml` with `Spa=true`), the portal. Every signed-in module (Forums, Schedule, Cases, Evaluations, Records, Admin) is a path on it, not a host ([docs delta](../docs/deltas/2026-11-05-one-portal-host.md)). Outputs: `AppUrl`, `AppBucket`, `AppDistributionId`.
+- The landing site (`LandingSite`) exists in both stacks: `access-ccs.com` and `www.access-ccs.com` on prod, `dev.access-ccs.com` on dev.
 - The design system site (`DesignSite`) is not uploaded by `deploy-dev.sh`: pushing a `v*` tag in `MeetingAt10/meetingatten-design-system` runs its `deploy-site.yml`, which assumes `DesignDeployRole` through GitHub OIDC (no AWS keys in GitHub) and may only sync that bucket and invalidate that distribution. After the first stack deploy, set the repository variables `DESIGN_SITE_ROLE_ARN`, `DESIGN_SITE_BUCKET`, `DESIGN_SITE_DISTRIBUTION_ID` and `DESIGN_SITE_URL` from the `Design*` outputs. If the account already has a GitHub OIDC provider, pass its ARN as `GithubOidcProviderArn`. The repo issues immutable OIDC subjects (`repo:MeetingAt10@343086680/meetingatten-design-system@1431974802:...`), so `DesignSystemRepository` uses that form; a renamed or re-created repo cannot assume the role.
 - The CloudFront Function leaves `.../opengraph-image` and `.../twitter-image` paths (optionally with a `-<hash>` suffix) alone: Next.js writes those images without an extension.
 
@@ -68,7 +69,6 @@ flowchart TB
   root --> landing["LandingSite<br/>static-site.yaml"]
   root --> meeting["MeetingSite<br/>static-site.yaml"]
   root --> app["AppSite<br/>static-site.yaml · Spa=true"]
-  root --> modules["ForumsSite, ScheduleSite, CasesSite,<br/>EvaluationsSite, RecordsSite, AdminSite<br/>static-site.yaml · Spa=true"]
   root --> design["DesignSite<br/>static-site.yaml"]
   root --> role["DesignDeployRole<br/>github-deploy-role.yaml"]
   design -. bucket + distribution .-> role
@@ -144,7 +144,7 @@ pcore scripts/deploy-app-sites.sh
 SKIP_STACK=1 pcore scripts/deploy-app-sites.sh   # sites only: skip backend build and stack deploy
 ```
 
-It builds the frontend once with `VITE_API_URL` and `VITE_SITE_ORIGINS` from the stack outputs, then syncs the build to all seven buckets and invalidates each distribution. Set `SESSION_SECRET` in the environment to inline it into the Lambda bundle, as backend CI does; without it the API signs sessions with a random per-instance key.
+It builds the frontend with `VITE_API_URL` from the stack outputs, then syncs the build to the portal bucket and invalidates its distribution. Set `SESSION_SECRET` in the environment to inline it into the Lambda bundle, as backend CI does; without it the API signs sessions with a random per-instance key.
 
 ### Environments and hostnames (`access-ccs.com`)
 
@@ -157,20 +157,14 @@ It builds the frontend once with `VITE_API_URL` and `VITE_SITE_ORIGINS` from the
 
 | Site | Prod hostname | Dev hostname |
 |---|---|---|
-| Landing | `access-ccs.com`, `www.access-ccs.com` | none (prod only) |
-| Portal (Home) | `portal.access-ccs.com` | `portal-dev.access-ccs.com` |
-| Forums | `forums.access-ccs.com` | `forums-dev.access-ccs.com` |
-| Schedule | `schedule.access-ccs.com` | `schedule-dev.access-ccs.com` |
-| Cases | `cases.access-ccs.com` | `cases-dev.access-ccs.com` |
-| Evaluations | `evaluations.access-ccs.com` | `evaluations-dev.access-ccs.com` |
-| Records | `records.access-ccs.com` | `records-dev.access-ccs.com` |
-| Admin | `admin.access-ccs.com` | `admin-dev.access-ccs.com` |
+| Landing | `access-ccs.com`, `www.access-ccs.com` | `dev.access-ccs.com` |
+| Portal (every signed-in module) | `portal.access-ccs.com` | `portal-dev.access-ccs.com` |
 | Design system | `design.access-ccs.com` | `design-dev.access-ccs.com` |
 | Meeting At 10 | `team.access-ccs.com` | `team-dev.access-ccs.com` |
 
 Each stack has its own API, Lambda, tables and auth store, so dev data and accounts never reach prod. The seeded accounts' shared password is the `NoEcho` stack parameter `SeedPassword` (Lambda `SEED_PASSWORD`), different per stack. Set it by hand with `aws cloudformation deploy ... --parameter-overrides SeedPassword='<value>'`; CI deploys keep the current value. When it is empty, the API disables seeded sign-in. The stack name `accs-dev` predates the split; it is the dev environment.
 
-App CI picks the stack from the branch: `main` deploys to `accs-prod`, `dev` to `accs-dev` (frontend, backend and meeting@10; the landing deploys from `main` to `accs-prod` only). Backend CI reads the Lambda name from the stack output `ApiFunctionName`.
+App CI picks the stack from the branch: `main` deploys to `accs-prod`, `dev` to `accs-dev` (frontend, backend, landing and meeting@10). Backend CI reads the Lambda name from the stack output `ApiFunctionName`.
 
 CloudFront only accepts certificates from us-east-1, so the certificate for `access-ccs.com` and `*.access-ccs.com` lives in a separate stack, `accs-dev-certificate`, in us-east-1. Both environments share it. It validates itself through a DNS record in the hosted zone. Deploy it by hand, and pass its ARN to `envs/dev/main.yaml` as the `CertificateArn` default:
 
@@ -179,9 +173,9 @@ aws cloudformation deploy --region us-east-1 --template-file templates/certifica
   --stack-name accs-dev-certificate --no-fail-on-empty-changeset
 ```
 
-`static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so `SiteOrigins` and the API's CORS list follow automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
+`static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so the API's CORS list follows automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
 
-A hostname can sit on only one distribution, so moving a hostname between stacks means removing it from one stack before adding it to the other. Sites are created in two `DependsOn` chains because CloudFront rejects ten function creations at once ("Rate exceeded").
+A hostname can sit on only one distribution, so moving a hostname between stacks means removing it from one stack before adding it to the other. Sites are created in a `DependsOn` chain because CloudFront rejects several function creations at once ("Rate exceeded").
 
 ### CI deploy (`deploy-infra.yml`)
 

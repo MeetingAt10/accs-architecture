@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: accs environment root stack (accs-dev on the -dev hostnames, accs-prod on the plain hostnames)
+Description: accs environment root stack (accs-dev on the -dev hostnames and dev.<Domain>, accs-prod on the plain hostnames)
 
 Parameters:
   Project:
@@ -9,11 +9,11 @@ Parameters:
     Type: String
     AllowedValues: [dev, prod]
     Default: dev
-    Description: dev serves <site>-dev.<Domain> and has no landing site; prod serves <site>.<Domain> and the landing site on <Domain>
+    Description: dev serves <site>-dev.<Domain> and the landing site on dev.<Domain>; prod serves <site>.<Domain> and the landing site on <Domain> and www.<Domain>
   HostSuffix:
     Type: String
     Default: "-dev"
-    Description: Appended to each site label ("-dev" gives forums-dev.<Domain>); empty for prod
+    Description: Appended to each site label ("-dev" gives portal-dev.<Domain>); empty for prod
   DesignRefPattern:
     Type: String
     Default: refs/heads/master
@@ -51,23 +51,23 @@ Conditions:
   IsProd: !Equals [!Ref Env, prod]
 
 Resources:
-  # Sites are created in two chains (plus landing) so that a fresh stack does not create ten
-  # CloudFront functions at once, which CloudFront rejects with "Rate exceeded".
-  # The landing site exists only in prod.
+  # Four sites: landing, team, the portal (every signed-in module is a path on it) and the design system.
+  # They are chained so that a fresh stack does not create several CloudFront functions at once, which
+  # CloudFront rejects with "Rate exceeded".
   LandingSite:
     Type: AWS::CloudFormation::Stack
-    Condition: IsProd
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
-        DomainName: !Ref Domain
-        ExtraDomainName: !Sub www.${Domain}
+        DomainName: !If [IsProd, !Ref Domain, !Sub "dev.${Domain}"]
+        ExtraDomainName: !If [IsProd, !Sub "www.${Domain}", ""]
         CertificateArn: !Ref CertificateArn
         HostedZoneId: !Ref HostedZoneId
         SiteName: !Sub ${Project}-landing
 
   MeetingSite:
     Type: AWS::CloudFormation::Stack
+    DependsOn: LandingSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
@@ -88,82 +88,10 @@ Resources:
         SiteName: !Sub ${Project}-frontend
         Spa: "true"
 
-  # AppSite is the portal; the module sites below serve the same SPA build on their own hosts.
-  ForumsSite:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: AppSite
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub forums${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-forums
-        Spa: "true"
-
-  ScheduleSite:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: ForumsSite
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub schedule${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-schedule
-        Spa: "true"
-
-  CasesSite:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: ScheduleSite
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub cases${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-cases
-        Spa: "true"
-
-  EvaluationsSite:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub evaluations${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-evaluations
-        Spa: "true"
-
-  RecordsSite:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: EvaluationsSite
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub records${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-records
-        Spa: "true"
-
-  AdminSite:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: RecordsSite
-    Properties:
-      TemplateURL: ../../templates/static-site.yaml
-      Parameters:
-        DomainName: !Sub admin${HostSuffix}.${Domain}
-        CertificateArn: !Ref CertificateArn
-        HostedZoneId: !Ref HostedZoneId
-        SiteName: !Sub ${Project}-admin
-        Spa: "true"
-
   # Public design system showcase (built and uploaded by the design system repo's GitHub Actions).
   DesignSite:
     Type: AWS::CloudFormation::Stack
-    DependsOn: AdminSite
+    DependsOn: AppSite
     Properties:
       TemplateURL: ../../templates/static-site.yaml
       Parameters:
@@ -201,34 +129,19 @@ Resources:
         CodeKey: !Ref ApiCodeKey
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
         SeedPassword: !Ref SeedPassword
-        # Custom hostnames plus the CloudFront defaults, so both keep working.
+        # The portal's custom hostname plus its CloudFront default, so both keep working.
         CorsOrigin: !Join
           - ","
           -
             - !GetAtt AppSite.Outputs.Url
             - !GetAtt AppSite.Outputs.DefaultUrl
-            - !GetAtt ForumsSite.Outputs.Url
-            - !GetAtt ForumsSite.Outputs.DefaultUrl
-            - !GetAtt ScheduleSite.Outputs.Url
-            - !GetAtt ScheduleSite.Outputs.DefaultUrl
-            - !GetAtt CasesSite.Outputs.Url
-            - !GetAtt CasesSite.Outputs.DefaultUrl
-            - !GetAtt EvaluationsSite.Outputs.Url
-            - !GetAtt EvaluationsSite.Outputs.DefaultUrl
-            - !GetAtt RecordsSite.Outputs.Url
-            - !GetAtt RecordsSite.Outputs.DefaultUrl
-            - !GetAtt AdminSite.Outputs.Url
-            - !GetAtt AdminSite.Outputs.DefaultUrl
 
 Outputs:
   LandingUrl:
-    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.Url
   LandingBucket:
-    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.BucketName
   LandingDistributionId:
-    Condition: IsProd
     Value: !GetAtt LandingSite.Outputs.DistributionId
   MeetingUrl:
     Value: !GetAtt MeetingSite.Outputs.Url
@@ -242,42 +155,6 @@ Outputs:
     Value: !GetAtt AppSite.Outputs.BucketName
   AppDistributionId:
     Value: !GetAtt AppSite.Outputs.DistributionId
-  ForumsUrl:
-    Value: !GetAtt ForumsSite.Outputs.Url
-  ForumsBucket:
-    Value: !GetAtt ForumsSite.Outputs.BucketName
-  ForumsDistributionId:
-    Value: !GetAtt ForumsSite.Outputs.DistributionId
-  ScheduleUrl:
-    Value: !GetAtt ScheduleSite.Outputs.Url
-  ScheduleBucket:
-    Value: !GetAtt ScheduleSite.Outputs.BucketName
-  ScheduleDistributionId:
-    Value: !GetAtt ScheduleSite.Outputs.DistributionId
-  CasesUrl:
-    Value: !GetAtt CasesSite.Outputs.Url
-  CasesBucket:
-    Value: !GetAtt CasesSite.Outputs.BucketName
-  CasesDistributionId:
-    Value: !GetAtt CasesSite.Outputs.DistributionId
-  EvaluationsUrl:
-    Value: !GetAtt EvaluationsSite.Outputs.Url
-  EvaluationsBucket:
-    Value: !GetAtt EvaluationsSite.Outputs.BucketName
-  EvaluationsDistributionId:
-    Value: !GetAtt EvaluationsSite.Outputs.DistributionId
-  RecordsUrl:
-    Value: !GetAtt RecordsSite.Outputs.Url
-  RecordsBucket:
-    Value: !GetAtt RecordsSite.Outputs.BucketName
-  RecordsDistributionId:
-    Value: !GetAtt RecordsSite.Outputs.DistributionId
-  AdminUrl:
-    Value: !GetAtt AdminSite.Outputs.Url
-  AdminBucket:
-    Value: !GetAtt AdminSite.Outputs.BucketName
-  AdminDistributionId:
-    Value: !GetAtt AdminSite.Outputs.DistributionId
   DesignUrl:
     Value: !GetAtt DesignSite.Outputs.Url
   DesignBucket:
@@ -293,14 +170,3 @@ Outputs:
     Value: !GetAtt Api.Outputs.FunctionName
   TablePrefix:
     Value: !GetAtt Database.Outputs.TablePrefix
-  # JSON map of site key to URL, read by the frontend build (VITE_SITE_ORIGINS).
-  SiteOrigins:
-    Value: !Sub
-      - '{"portal":"${Portal}","forums":"${Forums}","schedule":"${Schedule}","cases":"${Cases}","evaluations":"${Evaluations}","records":"${Records}","admin":"${Admin}"}'
-      - Portal: !GetAtt AppSite.Outputs.Url
-        Forums: !GetAtt ForumsSite.Outputs.Url
-        Schedule: !GetAtt ScheduleSite.Outputs.Url
-        Cases: !GetAtt CasesSite.Outputs.Url
-        Evaluations: !GetAtt EvaluationsSite.Outputs.Url
-        Records: !GetAtt RecordsSite.Outputs.Url
-        Admin: !GetAtt AdminSite.Outputs.Url

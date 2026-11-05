@@ -48,11 +48,7 @@ publish() { # dir build-subdir output-prefix
 
 publish "$LANDING" out Landing
 publish "$MEETING" out Meeting
-VITE_SITE_ORIGINS="$(out SiteOrigins)" publish "$FRONTEND" dist App
-for p in Forums Schedule Cases Evaluations Records Admin; do # module sites serve the same build
-  aws s3 sync "$FRONTEND/dist" "s3://$(out "${p}Bucket")" --delete
-  aws cloudfront create-invalidation --distribution-id "$(out "${p}DistributionId")" --paths '/*' >/dev/null
-done
+publish "$FRONTEND" dist App
 
 echo
-for k in LandingUrl MeetingUrl AppUrl ForumsUrl ScheduleUrl CasesUrl EvaluationsUrl RecordsUrl AdminUrl ApiUrl; do printf '%-14s %s\n' "$k" "$(out $k)"; done
+for k in LandingUrl MeetingUrl AppUrl ApiUrl; do printf '%-14s %s\n' "$k" "$(out $k)"; done
