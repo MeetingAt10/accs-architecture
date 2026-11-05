@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy only the ACCS app (seven SPA sites) and API: never the landing or meeting sites.
+# Deploy only the ACCS portal and API: never the landing or meeting sites.
 # SKIP_STACK=1 skips the backend build and stack deploy (sites only).
 # SESSION_SECRET (optional env) is inlined into a new Lambda bundle like the backend CI does. Without it the
 # script keeps the current API code (normally the CI build) and only updates the stack. Never printed.
@@ -15,7 +15,6 @@ BACKEND=${BACKEND_DIR:-$SYSTEM/backend}
 FRONTEND=${FRONTEND_DIR:-$SYSTEM/frontend}
 
 P=(); command -v pcore >/dev/null && P=(pcore)
-SITES="App Forums Schedule Cases Evaluations Records Admin"
 
 out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
 
@@ -50,13 +49,10 @@ fi
 
 echo "== frontend"
 (cd "$FRONTEND" && "${P[@]}" npm ci)
-(cd "$FRONTEND" && rm -rf dist && VITE_API_URL="$(out ApiUrl)/api" VITE_SITE_ORIGINS="$(out SiteOrigins)" "${P[@]}" npm run build)
-for p in $SITES; do
-  echo "== $p"
-  aws s3 sync "$FRONTEND/dist" "s3://$(out "${p}Bucket")" --delete
-  aws cloudfront create-invalidation --distribution-id "$(out "${p}DistributionId")" --paths '/*' >/dev/null
-done
+(cd "$FRONTEND" && rm -rf dist && VITE_API_URL="$(out ApiUrl)/api" "${P[@]}" npm run build)
+aws s3 sync "$FRONTEND/dist" "s3://$(out AppBucket)" --delete
+aws cloudfront create-invalidation --distribution-id "$(out AppDistributionId)" --paths '/*' >/dev/null
 
 echo
-for p in $SITES; do printf '%-12s %s\n' "$p" "$(out "${p}Url")"; done
+printf '%-12s %s\n' AppUrl "$(out AppUrl)"
 printf '%-12s %s\n' ApiUrl "$(out ApiUrl)"
