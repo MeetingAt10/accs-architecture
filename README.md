@@ -3,18 +3,31 @@
 AWS infrastructure provisioned with CloudFormation and configured with AWS Systems Manager (SSM).
 
 - `cloudformation/` — AWS provisioning
-  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site)
-  - `envs/dev/main.yaml` — dev root stack: accs-landing, meeting@10-website, the accs-system portal site, accs-system backend and its DynamoDB table, design system site (+ its deploy role)
-- `.github/workflows/deploy-infra.yml` — CI: lints templates on every PR and push; on `main` validates and deploys stacks `accs-dev` and then `accs-prod`, each when its change set is not empty (ADR 0005)
+  - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site), `github-infra-role.yaml` (GitHub OIDC role the infra CI assumes), `certificate.yaml` (us-east-1 ACM certificate)
+  - `envs/dev/main.yaml` — root stack, deployed as both `accs-dev` and `accs-prod` (the `Env`, `HostSuffix` and `DesignRefPattern` parameters pick the environment): landing, meeting@10-website, the portal site, the API and its DynamoDB tables, the design system site and its deploy role
+- `.github/workflows/deploy-infra.yml` — CI: lints templates on pull requests and on pushes that touch `cloudformation/` or the workflow; on `main` validates and deploys stacks `accs-dev` and then `accs-prod`, each when its change set is not empty (ADR 0005)
 - `scripts/deploy-dev.sh` — builds every app, deploys the stack, uploads the sites
   - `scripts/deploy-app-sites.sh` — deploys only the ACCS portal and API (never landing or meeting)
 - `ssm/` — host configuration
   - `documents/` — SSM Command/Automation documents, applied via State Manager associations declared in CloudFormation (`AWS::SSM::Association`), targeting instances by tag
-- `iam/` — inline policies of the IAM users (users and access keys are created by hand, see Access)
+- `iam/` — policies of the IAM users: an inline policy for `dev`, a managed policy for `deploy` (users and access keys are created by hand, see Access)
 - `adr/` — architecture decision records (one per decision)
-- `diagrams/` — system, deployment, and data-flow diagrams
+- `diagrams/` — the ACCS sitemap and system diagrams (see [Diagrams](#diagrams))
 
 Configuration values and secrets go in SSM Parameter Store / Secrets Manager, not in the repo.
+
+## Diagrams
+
+- [`diagrams/sitemap.md`](diagrams/sitemap.md): every portal page by area, as a Mermaid diagram. Route details and access rules are in `sitemap.md` in the `accs-docs` repository.
+- [`diagrams/accs-runtime.html`](diagrams/accs-runtime.html): the AWS runtime as an interactive page, with search, focus, relationship tracing and exports. Open it in a browser. Its source is `diagrams/accs-runtime.architecture.json`.
+
+The runtime page is built with [Archify](https://github.com/tt-a1i/archify). Edit the JSON, then rebuild from the Archify skill directory, using absolute paths for the three repository paths:
+
+```sh
+node bin/archify.mjs deliver architecture <repo>/diagrams/accs-runtime.architecture.json <repo>/diagrams/accs-runtime.html --quality showcase --repo-root <repo>
+```
+
+Each component links to the file that defines it, pinned to the commit in `meta.repository.revision`. Update that revision when those files change.
 
 ## How it fits together
 
@@ -29,12 +42,14 @@ flowchart LR
       cfLanding["accs-landing<br/>distribution"]
       cfMeeting["meeting@10-website<br/>distribution"]
       cfApp["accs-system frontend<br/>distribution"]
+      cfDesign["design system<br/>distribution"]
       fn["CloudFront Function<br/>/path → /path/index.html"]
     end
 
     s3Landing[("S3 · landing<br/>private")]
     s3Meeting[("S3 · meeting site<br/>private")]
     s3App[("S3 · frontend<br/>private")]
+    s3Design[("S3 · design system<br/>private")]
 
     apigw["API Gateway<br/>HTTP API"]
     lambda["Lambda · Node 22 arm64<br/>Express app (accs-backend)"]
@@ -42,11 +57,12 @@ flowchart LR
     ddb[("DynamoDB · 12 domain tables<br/>accs-dev-ccs_*, on-demand")]
   end
 
-  user -->|HTTPS| cfLanding & cfMeeting & cfApp
-  cfLanding & cfMeeting & cfApp -. viewer-request .-> fn
+  user -->|HTTPS| cfLanding & cfMeeting & cfApp & cfDesign
+  cfLanding & cfMeeting & cfApp & cfDesign -. viewer-request .-> fn
   cfLanding -->|OAC signed| s3Landing
   cfMeeting -->|OAC signed| s3Meeting
   cfApp -->|OAC signed| s3App
+  cfDesign -->|OAC signed| s3Design
   user -->|HTTPS /api/*| apigw --> lambda --> logs
   lambda -->|item read/write| ddb
 ```
@@ -65,7 +81,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  root["accs-dev<br/>envs/dev/main.yaml"]
+  root["accs-dev / accs-prod<br/>envs/dev/main.yaml"]
   root --> landing["LandingSite<br/>static-site.yaml"]
   root --> meeting["MeetingSite<br/>static-site.yaml"]
   root --> app["AppSite<br/>static-site.yaml · Spa=true"]
@@ -75,7 +91,7 @@ flowchart TB
   root --> db["Database<br/>database.yaml"]
   root --> api["Api<br/>api.yaml"]
   db -. TableName + TableArn .-> api
-  app & modules -. Url list to CorsOrigin .-> api
+  app -. Url + DefaultUrl to CorsOrigin .-> api
 
   subgraph site["static-site.yaml creates"]
     direction LR
@@ -87,7 +103,7 @@ flowchart TB
   end
   subgraph apit["api.yaml creates"]
     direction LR
-    role[IAM role] --- f[Lambda function] --- ab[(Auth store S3 bucket)] --- lg[Log group] --- http[HTTP API] --- perm[Invoke permission]
+    iam[IAM role] --- f[Lambda function] --- ab[(Auth store S3 bucket)] --- lg[Log group] --- http[HTTP API] --- perm[Invoke permission]
   end
 ```
 
@@ -144,7 +160,7 @@ pcore scripts/deploy-app-sites.sh
 SKIP_STACK=1 pcore scripts/deploy-app-sites.sh   # sites only: skip backend build and stack deploy
 ```
 
-It builds the frontend with `VITE_API_URL` from the stack outputs, then syncs the build to the portal bucket and invalidates its distribution. Set `SESSION_SECRET` in the environment to inline it into the Lambda bundle, as backend CI does; without it the API signs sessions with a random per-instance key.
+It builds the frontend with `VITE_API_URL` from the stack outputs, then syncs the build to the portal bucket and invalidates its distribution. Set `SESSION_SECRET` in the environment to build a new Lambda bundle with it inlined, as backend CI does. Without it the script keeps the current API code and only updates the stack. The script targets `accs-dev` unless `STACK` is set.
 
 ### Environments and hostnames (`access-ccs.com`)
 
@@ -179,7 +195,7 @@ A hostname can sit on only one distribution, so moving a hostname between stacks
 
 ### CI deploy (`deploy-infra.yml`)
 
-Pushing to `main` with changes under `cloudformation/` deploys the stack: `cfn-lint`, then `validate-template`, `cloudformation package`, and `cloudformation deploy --no-fail-on-empty-changeset` (nothing deploys if nothing changed). Pull requests only lint. The job assumes `github-accs-infra-deploy` through GitHub OIDC (ARN in the repo variable `INFRA_DEPLOY_ROLE_ARN`); that role is in its own stack, `accs-infra-ci`, which you deploy by hand:
+Pushing to `main` with changes under `cloudformation/` (or to the workflow file), or running the workflow by hand, deploys both stacks: `cfn-lint`, then `validate-template`, `cloudformation package`, and `cloudformation deploy --no-fail-on-empty-changeset` for `accs-dev` and then for `accs-prod` (nothing deploys if nothing changed). The prod deploy overrides `Env`, `HostSuffix`, `DesignRefPattern` and `GithubOidcProviderArn`. Pull requests only lint. The job assumes `github-accs-infra-deploy` through GitHub OIDC (ARN in the repo variable `INFRA_DEPLOY_ROLE_ARN`); that role is in its own stack, `accs-infra-ci`, which you deploy by hand:
 
 ```sh
 aws cloudformation deploy --template-file cloudformation/templates/github-infra-role.yaml \

@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ACCS runtime on AWS",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1120,
+      660
+    ],
+    "repository": {
+      "url": "https://github.com/MeetingAt10/accs-architecture",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "ed1b14f024b315fde9499eb642db5ac8d3b25f0f"
+    }
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser",
+      "sublabel": "Students, faculty, staff",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        160,
+        72
+      ],
+      "sources": [
+        {
+          "path": "README.md",
+          "label": "Runtime"
+        }
+      ]
+    },
+    {
+      "id": "public-cdn",
+      "type": "cloud",
+      "label": "CloudFront: public sites",
+      "sublabel": "Landing, Meeting At 10, Design",
+      "pos": [
+        300,
+        70
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/envs/dev/main.yaml",
+          "line": 57,
+          "label": "Sites"
+        }
+      ]
+    },
+    {
+      "id": "public-s3",
+      "type": "database",
+      "label": "S3: site buckets",
+      "sublabel": "Private, one per site",
+      "pos": [
+        640,
+        70
+      ],
+      "size": [
+        200,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/static-site.yaml"
+        }
+      ]
+    },
+    {
+      "id": "portal-cdn",
+      "type": "cloud",
+      "label": "CloudFront: portal",
+      "sublabel": "Every signed-in module",
+      "pos": [
+        300,
+        270
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/envs/dev/main.yaml",
+          "line": 79,
+          "label": "AppSite"
+        }
+      ]
+    },
+    {
+      "id": "portal-s3",
+      "type": "database",
+      "label": "S3: portal bucket",
+      "sublabel": "SPA build, private",
+      "pos": [
+        640,
+        270
+      ],
+      "size": [
+        200,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/static-site.yaml"
+        }
+      ]
+    },
+    {
+      "id": "api-gateway",
+      "type": "security",
+      "label": "API Gateway",
+      "sublabel": "HTTP API, portal origin only",
+      "pos": [
+        300,
+        470
+      ],
+      "size": [
+        230,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/api.yaml"
+        }
+      ]
+    },
+    {
+      "id": "lambda",
+      "type": "backend",
+      "label": "Lambda",
+      "sublabel": "Express app, Node 22",
+      "pos": [
+        640,
+        470
+      ],
+      "size": [
+        180,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/api.yaml"
+        }
+      ]
+    },
+    {
+      "id": "dynamodb",
+      "type": "database",
+      "label": "DynamoDB",
+      "sublabel": "12 domain tables",
+      "pos": [
+        930,
+        340
+      ],
+      "size": [
+        160,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/database.yaml"
+        }
+      ]
+    },
+    {
+      "id": "auth-store",
+      "type": "database",
+      "label": "S3: auth store",
+      "sublabel": "Encrypted, versioned",
+      "pos": [
+        930,
+        470
+      ],
+      "size": [
+        160,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/api.yaml"
+        }
+      ]
+    },
+    {
+      "id": "logs",
+      "type": "cloud",
+      "label": "CloudWatch Logs",
+      "sublabel": "14-day retention",
+      "pos": [
+        930,
+        570
+      ],
+      "size": [
+        160,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cloudformation/templates/api.yaml"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-to-public",
+      "from": "browser",
+      "to": "public-cdn",
+      "label": "HTTPS",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "public-to-s3",
+      "from": "public-cdn",
+      "to": "public-s3",
+      "label": "OAC signed"
+    },
+    {
+      "id": "browser-to-portal",
+      "from": "browser",
+      "to": "portal-cdn",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "portal-to-s3",
+      "from": "portal-cdn",
+      "to": "portal-s3",
+      "label": "OAC signed"
+    },
+    {
+      "id": "browser-to-api",
+      "from": "browser",
+      "to": "api-gateway",
+      "label": "/api/*",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "api-to-lambda",
+      "from": "api-gateway",
+      "to": "lambda",
+      "label": "invoke",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lambda-to-dynamodb",
+      "from": "lambda",
+      "to": "dynamodb",
+      "label": "read/write",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "lambda-to-auth",
+      "from": "lambda",
+      "to": "auth-store",
+      "label": "accounts"
+    },
+    {
+      "id": "lambda-to-logs",
+      "from": "lambda",
+      "to": "logs",
+      "label": "logs",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One portal host",
+      "items": [
+        "Forums, Schedule, Cases, Evaluations, Records and Admin are paths on the portal",
+        "Prod and dev run the same template as separate stacks"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Private storage",
+      "items": [
+        "Only a bucket's own distribution can read it",
+        "Data is reachable only through the API"
+      ]
+    }
+  ]
+}
