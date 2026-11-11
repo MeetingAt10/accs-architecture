@@ -189,6 +189,15 @@ aws cloudformation deploy --region us-east-1 --template-file templates/certifica
   --stack-name accs-dev-certificate --no-fail-on-empty-changeset
 ```
 
+Email goes out through Amazon SES from the domain identity `access-ccs.com`, in ap-southeast-1 (the API Lambda's region). The identity and its three Easy DKIM CNAMEs live in a separate stack, `accs-email` (`templates/email.yaml`), because an SES identity is account-wide per region and both environments share it. CI does not deploy it. Deploy it by hand once:
+
+```sh
+aws cloudformation deploy --template-file templates/email.yaml \
+  --stack-name accs-email --no-fail-on-empty-changeset
+```
+
+`api.yaml` sets the Lambda's `MAIL_FROM` from the `MailFrom` parameter and allows `ses:SendEmail` on that identity only. The root stack passes `no-reply@access-ccs.com` to dev and an empty value to prod, so prod sends no email until the team turns it on. The address needs no mailbox. The account is in the SES sandbox: it sends only to verified addresses, at most 200 emails a day. Production access was requested on 2026-11-12 (transactional, password reset codes only) and is pending AWS review; check with `aws sesv2 get-account --query Details.ReviewDetails`. The account-level suppression list is on for bounces and complaints. Until approval, verify a demo inbox in the SES console (Identities, Create identity, Email address). After approval, set the prod `MailFrom` in the root stack to `no-reply@access-ccs.com` to turn on prod email.
+
 `static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so the API's CORS list follows automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
 
 A hostname can sit on only one distribution, so moving a hostname between stacks means removing it from one stack before adding it to the other. Sites are created in a `DependsOn` chain because CloudFront rejects several function creations at once ("Rate exceeded").

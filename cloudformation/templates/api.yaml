@@ -16,9 +16,18 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: Sign-in password of the seeded accounts (SEED_PASSWORD); empty disables seeded sign-in
+  MailFrom:
+    Type: String
+    Default: ""
+    Description: Sender of reset codes and new-concern emails (MAIL_FROM), an address on the verified SES domain (email.yaml); empty sends no email
+  MailDomain:
+    Type: String
+    Default: access-ccs.com
+    Description: Verified SES domain identity the Lambda may send from
 
 Conditions:
   HasSeedPassword: !Not [!Equals [!Ref SeedPassword, ""]]
+  HasMailFrom: !Not [!Equals [!Ref MailFrom, ""]]
 
 Resources:
   # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
@@ -79,6 +88,14 @@ Resources:
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
+        # Send only from the SES domain identity (email.yaml). Grants nothing until that identity is verified.
+        - PolicyName: send-email
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${MailDomain}
         - PolicyName: auth-store
           PolicyDocument:
             Version: "2012-10-17"
@@ -163,6 +180,7 @@ Resources:
           AUTH_STORE_BUCKET: !Ref AuthStoreBucket
           TABLE_PREFIX: !Ref TablePrefix
           SEED_PASSWORD: !If [HasSeedPassword, !Ref SeedPassword, !Ref AWS::NoValue]
+          MAIL_FROM: !If [HasMailFrom, !Ref MailFrom, !Ref AWS::NoValue]
 
   LogGroup:
     Type: AWS::Logs::LogGroup
