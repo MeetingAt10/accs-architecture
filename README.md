@@ -196,7 +196,7 @@ aws cloudformation deploy --template-file templates/email.yaml \
   --stack-name accs-email --no-fail-on-empty-changeset
 ```
 
-`api.yaml` sets the Lambda's `MAIL_FROM` from the `MailFrom` parameter and allows `ses:SendEmail` on that identity only. The root stack passes `no-reply@access-ccs.com` to dev and an empty value to prod, so prod sends no email until the team turns it on. The address needs no mailbox. The account is in the SES sandbox: it sends only to verified addresses, at most 200 emails a day. Production access was requested on 2026-11-12 (transactional, password reset codes only) and is pending AWS review; check with `aws sesv2 get-account --query Details.ReviewDetails`. The account-level suppression list is on for bounces and complaints. Until approval, verify a demo inbox in the SES console (Identities, Create identity, Email address). After approval, set the prod `MailFrom` in the root stack to `no-reply@access-ccs.com` to turn on prod email.
+`api.yaml` sets the Lambda's `MAIL_FROM` from the `MailFrom` parameter and allows `ses:SendEmail` on that identity only. The root stack passes `no-reply@access-ccs.com` to both dev and prod. The address needs no mailbox. SES production access was granted on 2026-11-12, so the account is out of the sandbox: it sends to any address, up to 50,000 emails a day at 14 per second. The account-level suppression list is on for bounces and complaints.
 
 `static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so the API's CORS list follows automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
 

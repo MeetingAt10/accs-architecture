@@ -129,8 +129,8 @@ Resources:
         CodeKey: !Ref ApiCodeKey
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
         SeedPassword: !Ref SeedPassword
-        # Email from the SES domain identity (stack accs-email). Dev only for now: prod gets it when the team is ready.
-        MailFrom: !If [IsProd, "", !Sub "no-reply@${Domain}"]
+        # Email from the SES domain identity (stack accs-email), for dev and prod.
+        MailFrom: !Sub "no-reply@${Domain}"
         MailDomain: !Ref Domain
         # The portal's custom hostname plus its CloudFront default, so both keep working.
         CorsOrigin: !Join
