@@ -75,6 +75,57 @@ Resources:
               Bool:
                 aws:SecureTransport: "false"
 
+  # Class material files (accs-backend #44): uploaded by the browser with a signed PUT and downloaded with a signed GET,
+  # both issued by the API after it checks access. Private, encrypted, kept on stack delete. CORS lets the portal PUT.
+  MaterialsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: !Split [",", !Ref CorsOrigin]
+            AllowedMethods: [PUT, GET]
+            AllowedHeaders: [content-type, content-length]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          # Uploads that never finish leave no partial parts behind.
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
+  MaterialsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MaterialsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt MaterialsBucket.Arn
+              - !Sub ${MaterialsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
   Role:
     Type: AWS::IAM::Role
     Properties:
@@ -96,6 +147,17 @@ Resources:
               - Effect: Allow
                 Action: ses:SendEmail
                 Resource: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${MailDomain}
+        # Signs uploads and downloads of class material files, checks and deletes them; nothing outside materials/.
+        - PolicyName: materials
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub ${MaterialsBucket.Arn}/materials/*
         - PolicyName: auth-store
           PolicyDocument:
             Version: "2012-10-17"
@@ -178,6 +240,7 @@ Resources:
           NODE_ENV: production
           CORS_ORIGIN: !Ref CorsOrigin
           AUTH_STORE_BUCKET: !Ref AuthStoreBucket
+          MATERIALS_BUCKET: !Ref MaterialsBucket
           TABLE_PREFIX: !Ref TablePrefix
           SEED_PASSWORD: !If [HasSeedPassword, !Ref SeedPassword, !Ref AWS::NoValue]
           MAIL_FROM: !If [HasMailFrom, !Ref MailFrom, !Ref AWS::NoValue]
@@ -211,3 +274,5 @@ Outputs:
     Value: !Ref Function
   AuthStoreBucket:
     Value: !Ref AuthStoreBucket
+  MaterialsBucket:
+    Value: !Ref MaterialsBucket
