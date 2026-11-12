@@ -2,6 +2,8 @@
 
 AWS infrastructure provisioned with CloudFormation and configured with AWS Systems Manager (SSM).
 
+![ACCS architecture on AWS: browser to Route 53, CloudFront and S3 for the sites, API Gateway and Lambda for the API, with DynamoDB, an S3 auth store, CloudWatch Logs and Amazon SES behind the Lambda; GitHub Actions deploys through IAM roles](diagrams/accs-architecture.png)
+
 - `cloudformation/` — AWS provisioning
   - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site), `github-infra-role.yaml` (GitHub OIDC role the infra CI assumes), `certificate.yaml` (us-east-1 ACM certificate)
   - `envs/dev/main.yaml` — root stack, deployed as both `accs-dev` and `accs-prod` (the `Env`, `HostSuffix` and `DesignRefPattern` parameters pick the environment): landing, meeting@10-website, the portal site, the API and its DynamoDB tables, the design system site and its deploy role
@@ -19,6 +21,7 @@ Configuration values and secrets go in SSM Parameter Store / Secrets Manager, no
 ## Diagrams
 
 - [`diagrams/sitemap.md`](diagrams/sitemap.md): every portal page by area, as a Mermaid diagram. Route details and access rules are in `sitemap.md` in the `accs-docs` repository.
+- [`diagrams/accs-architecture.png`](diagrams/accs-architecture.png): the overview at the top of this README, drawn with the official AWS Architecture Icons by the Python [`diagrams`](https://diagrams.mingrammer.com/) library. Its source is `diagrams/accs_architecture.py`; the rebuild command (a `podman` container, so Graphviz need not be installed) is in that file's docstring.
 - [`diagrams/accs-runtime.html`](diagrams/accs-runtime.html): the AWS runtime as an interactive page, with search, focus, relationship tracing and exports. Open it in a browser. Its source is `diagrams/accs-runtime.architecture.json`.
 
 The runtime page is built with [Archify](https://github.com/tt-a1i/archify). Edit the JSON, then rebuild from the Archify skill directory, using absolute paths for the three repository paths:
@@ -55,6 +58,7 @@ flowchart LR
     lambda["Lambda · Node 22 arm64<br/>Express app (accs-backend)"]
     logs[("CloudWatch Logs<br/>14-day retention")]
     ddb[("DynamoDB · 12 domain tables<br/>accs-dev-ccs_*, on-demand")]
+    ses["Amazon SES<br/>no-reply@access-ccs.com"]
   end
 
   user -->|HTTPS| cfLanding & cfMeeting & cfApp & cfDesign
@@ -65,6 +69,7 @@ flowchart LR
   cfDesign -->|OAC signed| s3Design
   user -->|HTTPS /api/*| apigw --> lambda --> logs
   lambda -->|item read/write| ddb
+  lambda -->|reset codes, new concerns| ses
 ```
 
 - Buckets block all public access; only their own CloudFront distribution can read them (Origin Access Control).
