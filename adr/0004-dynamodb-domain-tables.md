@@ -44,6 +44,7 @@ ADR 0003 created one table, `accs-dev-app`, with two overloaded indexes. The pro
 1. `ccs_identity` names two TTL attributes (`expires_epoch` on SESSION, `purge_epoch` on LOGINATTEMPT). DynamoDB allows one per table, so every expiring item in `ccs_identity` uses `expires_epoch`.
 2. SESSION: `session_id` is the SHA-256 of the cookie token, not the token itself, so a leaked table or backup cannot be replayed as live sessions. `remember` (BOOL) is added to select the idle timeout.
 3. RESET is a new `ccs_identity` item type for password reset codes (DOC006 has none): `PK = USER#<user_id>`, `SK = RESET`, attributes `user_id`, `code_hash`, `code_expires_at`, `attempts`, `issued_count`, `window_start`, `issued_by`, `expires_epoch` (TTL, kept until both the code and the hourly issue window are over).
+4. THROTTLE is a new `ccs_identity` item type for failed-attempt counters (DOC006 has none), so the 5-attempts-in-15-minutes limit on sign-in, password reset, first sign-in and password change holds across every Lambda instance: `PK = THROTTLE#<sha256 of the throttle key>`, `SK = THROTTLE`, attributes `entity_type`, `attempts`, `window_start`, `updated_at`, `expires_epoch` (TTL at the end of the 15-minute window). Only the hash of the key is stored, so the table holds no typed identifiers or client IP addresses. Writes are conditioned on the window, because TTL deletes late. It uses the existing `UpdateItem`, `PutItem` and `DeleteItem` grants on `ccs_identity`, so the policy does not change (accs-backend `src/throttle.ts`, PR #17).
 
 ## Migration
 

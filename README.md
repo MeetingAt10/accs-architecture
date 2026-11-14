@@ -2,6 +2,8 @@
 
 AWS infrastructure provisioned with CloudFormation and configured with AWS Systems Manager (SSM).
 
+![ACCS architecture on AWS: browser to Route 53, CloudFront and S3 for the sites, API Gateway and Lambda for the API, with DynamoDB, an S3 auth store, CloudWatch Logs and Amazon SES behind the Lambda; GitHub Actions deploys through IAM roles](diagrams/accs-architecture.png)
+
 - `cloudformation/` — AWS provisioning
   - `templates/` — nested stacks: `static-site.yaml` (private S3 + CloudFront), `api.yaml` (Lambda + HTTP API), `database.yaml` (twelve DynamoDB domain tables), `github-deploy-role.yaml` (GitHub OIDC role that publishes one site), `github-infra-role.yaml` (GitHub OIDC role the infra CI assumes), `certificate.yaml` (us-east-1 ACM certificate)
   - `envs/dev/main.yaml` — root stack, deployed as both `accs-dev` and `accs-prod` (the `Env`, `HostSuffix` and `DesignRefPattern` parameters pick the environment): landing, meeting@10-website, the portal site, the API and its DynamoDB tables, the design system site and its deploy role
@@ -19,6 +21,7 @@ Configuration values and secrets go in SSM Parameter Store / Secrets Manager, no
 ## Diagrams
 
 - [`diagrams/sitemap.md`](diagrams/sitemap.md): every portal page by area, as a Mermaid diagram. Route details and access rules are in `sitemap.md` in the `accs-docs` repository.
+- [`diagrams/accs-architecture.png`](diagrams/accs-architecture.png): the overview at the top of this README, drawn with the official AWS Architecture Icons by the Python [`diagrams`](https://diagrams.mingrammer.com/) library. Its source is `diagrams/accs_architecture.py`; the rebuild command (a `podman` container, so Graphviz need not be installed) is in that file's docstring.
 - [`diagrams/accs-runtime.html`](diagrams/accs-runtime.html): the AWS runtime as an interactive page, with search, focus, relationship tracing and exports. Open it in a browser. Its source is `diagrams/accs-runtime.architecture.json`.
 
 The runtime page is built with [Archify](https://github.com/tt-a1i/archify). Edit the JSON, then rebuild from the Archify skill directory, using absolute paths for the three repository paths:
@@ -55,6 +58,7 @@ flowchart LR
     lambda["Lambda · Node 22 arm64<br/>Express app (accs-backend)"]
     logs[("CloudWatch Logs<br/>14-day retention")]
     ddb[("DynamoDB · 12 domain tables<br/>accs-dev-ccs_*, on-demand")]
+    ses["Amazon SES<br/>no-reply@access-ccs.com"]
   end
 
   user -->|HTTPS| cfLanding & cfMeeting & cfApp & cfDesign
@@ -65,11 +69,13 @@ flowchart LR
   cfDesign -->|OAC signed| s3Design
   user -->|HTTPS /api/*| apigw --> lambda --> logs
   lambda -->|item read/write| ddb
+  lambda -->|reset codes, invites, new concerns| ses
 ```
 
 - Buckets block all public access; only their own CloudFront distribution can read them (Origin Access Control).
 - Missing paths: the Next.js sites return `/404.html`, the frontend SPA falls back to `/index.html` for client-side routing.
 - Accounts: `api.yaml` creates a private, encrypted, versioned `AuthStoreBucket` (retained on stack delete). The Lambda gets `AUTH_STORE_BUCKET` and may only read/write `auth-store.json` in it (plus `ListBucket`, so a missing object reads as empty). It holds registered accounts and scrypt password hashes; the backend reads it with ETag caching and writes it with a conditional put, so registrations and password changes survive cold starts and are seen by every Lambda instance.
+- Class material files (accs-backend #44): `api.yaml` creates a private, encrypted `MaterialsBucket` (retained on stack delete) and gives the Lambda `MATERIALS_BUCKET` and `s3:PutObject`/`GetObject`/`DeleteObject` on `materials/*` only. Files never pass through the API: it checks access, then hands the browser a signed PUT (10 minutes, exact type and size, up to 25 MB) or a signed GET (5 minutes). The bucket's CORS allows `PUT` and `GET` from the portal origins (`CorsOrigin`), and a lifecycle rule aborts unfinished multipart uploads after a day.
 - Database: `database.yaml` creates the twelve DynamoDB domain tables of the DOC006 data dictionary, named `accs-dev-ccs_identity`, `accs-dev-ccs_grievance`, … (on-demand, PITR, deletion protection, retained on stack delete; TTL on `ccs_identity`, `ccs_notification`, `ccs_assistant`). Generic keys `PK`/`SK` with overloaded indexes `GSI1`…`GSI6` (36 in total); tables, indexes, and deviations from DOC006 are in ADR 0004, which supersedes the single-table ADR 0003. The Lambda gets `TABLE_PREFIX` and item-level actions on the business tables and their indexes, but not `Scan`; on `ccs_audit` it may only add and read entries. The root stack outputs `TablePrefix`. The auth store bucket stays until the backend moves accounts into `ccs_identity`.
 - The API only accepts browser requests from the portal: `CORS_ORIGIN` is a comma-separated list the backend parses (`AppSite`'s custom hostname and its CloudFront default).
 - The app is one CloudFront/S3 site, `AppSite` (`static-site.yaml` with `Spa=true`), the portal. Every signed-in module (Forums, Schedule, Cases, Evaluations, Records, Admin) is a path on it, not a host ([docs delta](../docs/deltas/2026-11-05-one-portal-host.md)). Outputs: `AppUrl`, `AppBucket`, `AppDistributionId`.
@@ -188,6 +194,15 @@ CloudFront only accepts certificates from us-east-1, so the certificate for `acc
 aws cloudformation deploy --region us-east-1 --template-file templates/certificate.yaml \
   --stack-name accs-dev-certificate --no-fail-on-empty-changeset
 ```
+
+Email goes out through Amazon SES from the domain identity `access-ccs.com`, in ap-southeast-1 (the API Lambda's region). The identity and its three Easy DKIM CNAMEs live in a separate stack, `accs-email` (`templates/email.yaml`), because an SES identity is account-wide per region and both environments share it. CI does not deploy it. Deploy it by hand once:
+
+```sh
+aws cloudformation deploy --template-file templates/email.yaml \
+  --stack-name accs-email --region ap-southeast-1 --no-fail-on-empty-changeset
+```
+
+`api.yaml` sets the Lambda's `MAIL_FROM` from the `MailFrom` parameter and allows `ses:SendEmail` on that identity only. The root stack passes `no-reply@access-ccs.com` to both dev and prod. The address needs no mailbox. SES production access was granted on 2026-11-12, so the account is out of the sandbox: it sends to any address, up to 50,000 emails a day at 14 per second. The account-level suppression list is on for bounces and complaints.
 
 `static-site.yaml` adds the aliases, the certificate, and Route 53 A/AAAA alias records when `DomainName` is set. Its `Url` output is then the custom hostname, so the API's CORS list follows automatically. The CloudFront default hostnames (`DefaultUrl`) still work, and they stay in the CORS list too.
 
