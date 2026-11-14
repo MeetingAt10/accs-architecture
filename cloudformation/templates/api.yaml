@@ -19,7 +19,7 @@ Parameters:
   MailFrom:
     Type: String
     Default: ""
-    Description: Sender of reset codes and new-concern emails (MAIL_FROM), an address on the verified SES domain (email.yaml); empty sends no email
+    Description: Sender of reset codes, invites and new-concern emails (MAIL_FROM), an address on the verified SES domain (email.yaml); empty sends no email
   MailDomain:
     Type: String
     Default: access-ccs.com
@@ -158,6 +158,10 @@ Resources:
                   - s3:GetObject
                   - s3:DeleteObject
                 Resource: !Sub ${MaterialsBucket.Arn}/materials/*
+              # ListBucket turns a missing object into 404 instead of 403, so completing an upload that never landed is a clean "not uploaded".
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt MaterialsBucket.Arn
         - PolicyName: auth-store
           PolicyDocument:
             Version: "2012-10-17"

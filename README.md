@@ -69,7 +69,7 @@ flowchart LR
   cfDesign -->|OAC signed| s3Design
   user -->|HTTPS /api/*| apigw --> lambda --> logs
   lambda -->|item read/write| ddb
-  lambda -->|reset codes, new concerns| ses
+  lambda -->|reset codes, invites, new concerns| ses
 ```
 
 - Buckets block all public access; only their own CloudFront distribution can read them (Origin Access Control).
@@ -199,7 +199,7 @@ Email goes out through Amazon SES from the domain identity `access-ccs.com`, in 
 
 ```sh
 aws cloudformation deploy --template-file templates/email.yaml \
-  --stack-name accs-email --no-fail-on-empty-changeset
+  --stack-name accs-email --region ap-southeast-1 --no-fail-on-empty-changeset
 ```
 
 `api.yaml` sets the Lambda's `MAIL_FROM` from the `MailFrom` parameter and allows `ses:SendEmail` on that identity only. The root stack passes `no-reply@access-ccs.com` to both dev and prod. The address needs no mailbox. SES production access was granted on 2026-11-12, so the account is out of the sandbox: it sends to any address, up to 50,000 emails a day at 14 per second. The account-level suppression list is on for bounces and complaints.

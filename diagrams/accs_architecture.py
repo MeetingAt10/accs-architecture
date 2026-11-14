@@ -60,6 +60,6 @@ with Diagram(
     fn >> ddb
     fn >> auth
     fn >> Edge(style="dashed") >> logs
-    fn >> Edge(label="reset codes,\nnew concerns") >> ses
+    fn >> Edge(label="reset codes, invites,\nnew concerns") >> ses
     ci >> Edge(label="assume role") >> roles
     roles >> Edge(style="dashed") >> [fn, sites]
