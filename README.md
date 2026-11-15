@@ -184,7 +184,7 @@ It builds the frontend with `VITE_API_URL` from the stack outputs, then syncs th
 | Design system | `design.access-ccs.com` | `design-dev.access-ccs.com` |
 | Meeting At 10 | `team.access-ccs.com` | `team-dev.access-ccs.com` |
 
-Each stack has its own API, Lambda, tables and auth store, so dev data and accounts never reach prod. The seeded accounts' shared password is the `NoEcho` stack parameter `SeedPassword` (Lambda `SEED_PASSWORD`), different per stack. Set it by hand with `aws cloudformation deploy ... --parameter-overrides SeedPassword='<value>'`; CI deploys keep the current value. When it is empty, the API disables seeded sign-in. The stack name `accs-dev` predates the split; it is the dev environment.
+Each stack has its own API, Lambda, tables and auth store, so dev data and stored accounts never reach prod. The seeded accounts are the same on both stacks (they come from the API code, including the 58 real CCS faculty and personnel). Their shared password is the `NoEcho` stack parameter `SeedPassword` (Lambda `SEED_PASSWORD`), set to the same value on prod and dev since 15 November 2026. Set it by hand with `aws cloudformation deploy ... --parameter-overrides SeedPassword='<value>'`; CI deploys keep the current value. When it is empty, the API disables seeded sign-in. The stack name `accs-dev` predates the split; it is the dev environment.
 
 App CI picks the stack from the branch: `main` deploys to `accs-prod`, `dev` to `accs-dev` (frontend, backend, landing and meeting@10). Backend CI reads the Lambda name from the stack output `ApiFunctionName`.
 
