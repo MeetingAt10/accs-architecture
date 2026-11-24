@@ -16,6 +16,11 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: Sign-in password of the seeded accounts (SEED_PASSWORD); empty disables seeded sign-in
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: OpenAI key of the assistant's model layer (OPENAI_API_KEY); empty keeps the rule-based assistant only
   MailFrom:
     Type: String
     Default: ""
@@ -28,6 +33,7 @@ Parameters:
 Conditions:
   HasSeedPassword: !Not [!Equals [!Ref SeedPassword, ""]]
   HasMailFrom: !Not [!Equals [!Ref MailFrom, ""]]
+  HasOpenAiApiKey: !Not [!Equals [!Ref OpenAiApiKey, ""]]
 
 Resources:
   # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
@@ -234,7 +240,8 @@ Resources:
       Architectures: [arm64]
       Handler: index.handler
       MemorySize: 256
-      Timeout: 10
+      # The assistant's model call may take up to OPENAI_TIMEOUT_MS (20 s); the HTTP API gives up at 30 s.
+      Timeout: 29
       Role: !GetAtt Role.Arn
       Code:
         S3Bucket: !Ref CodeBucket
@@ -248,6 +255,7 @@ Resources:
           TABLE_PREFIX: !Ref TablePrefix
           SEED_PASSWORD: !If [HasSeedPassword, !Ref SeedPassword, !Ref AWS::NoValue]
           MAIL_FROM: !If [HasMailFrom, !Ref MailFrom, !Ref AWS::NoValue]
+          OPENAI_API_KEY: !If [HasOpenAiApiKey, !Ref OpenAiApiKey, !Ref AWS::NoValue]
 
   LogGroup:
     Type: AWS::Logs::LogGroup
