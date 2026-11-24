@@ -42,6 +42,11 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: Sign-in password of the seeded accounts in this environment. Set once by hand per stack; later deploys keep it.
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: OpenAI key of the assistant's model layer in this environment. Set once by hand per stack; later deploys keep it.
   GithubOidcProviderArn:
     Type: String
     Default: ""
@@ -129,6 +134,7 @@ Resources:
         CodeKey: !Ref ApiCodeKey
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
         SeedPassword: !Ref SeedPassword
+        OpenAiApiKey: !Ref OpenAiApiKey
         # Email from the SES domain identity (stack accs-email), for dev and prod.
         MailFrom: !Sub "no-reply@${Domain}"
         MailDomain: !Ref Domain
