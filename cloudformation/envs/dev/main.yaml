@@ -47,6 +47,10 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: OpenAI key of the assistant's model layer in this environment. Set once by hand per stack; later deploys keep it.
+  MediaPublicKey:
+    Type: String
+    Default: ""
+    Description: PEM public key of the media CDN for post pictures and videos (scripts/media-signing-key.sh prints it). Set once per stack; later deploys keep it. Empty leaves the media CDN out.
   GithubOidcProviderArn:
     Type: String
     Default: ""
@@ -135,6 +139,8 @@ Resources:
         TablePrefix: !GetAtt Database.Outputs.TablePrefix
         SeedPassword: !Ref SeedPassword
         OpenAiApiKey: !Ref OpenAiApiKey
+        MediaPublicKey: !Ref MediaPublicKey
+        MediaPrivateKeyParameter: !Sub /${Project}/${Env}/media-signing-key
         # Email from the SES domain identity (stack accs-email), for dev and prod.
         MailFrom: !Sub "no-reply@${Domain}"
         MailDomain: !Ref Domain
