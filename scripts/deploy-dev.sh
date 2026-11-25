@@ -28,12 +28,15 @@ KEY="api/$(sha256sum "$ZIP" | cut -c1-16).zip"
 aws s3 cp "$ZIP" "s3://$ARTIFACTS/$KEY"
 
 echo "== stack"
+# MEDIA_PUBLIC_KEY_FILE (scripts/media-signing-key.sh) turns on the media CDN once; later deploys keep the key.
+MEDIA=()
+[ -n "${MEDIA_PUBLIC_KEY_FILE:-}" ] && MEDIA=(MediaPublicKey="$(cat "$MEDIA_PUBLIC_KEY_FILE")")
 cd "$ARCH/cloudformation"
 aws cloudformation package --template-file envs/dev/main.yaml \
   --s3-bucket "$ARTIFACTS" --s3-prefix templates --output-template-file packaged-dev.yaml
 aws cloudformation deploy --template-file packaged-dev.yaml --stack-name "$STACK" \
   --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
-  --parameter-overrides ApiCodeBucket="$ARTIFACTS" ApiCodeKey="$KEY" \
+  --parameter-overrides ApiCodeBucket="$ARTIFACTS" ApiCodeKey="$KEY" ${MEDIA[@]+"${MEDIA[@]}"} \
   --tags Project=accs Environment=dev ManagedBy=cloudformation
 
 out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }

@@ -29,11 +29,20 @@ Parameters:
     Type: String
     Default: access-ccs.com
     Description: Verified SES domain identity the Lambda may send from
+  MediaPublicKey:
+    Type: String
+    Default: ""
+    Description: PEM public key of the media CDN's signing key pair (scripts/media-signing-key.sh); empty leaves the media CDN out
+  MediaPrivateKeyParameter:
+    Type: String
+    Default: ""
+    Description: Name (starting with /) of the SSM SecureString holding the matching private key (read by the Lambda, never by CloudFormation)
 
 Conditions:
   HasSeedPassword: !Not [!Equals [!Ref SeedPassword, ""]]
   HasMailFrom: !Not [!Equals [!Ref MailFrom, ""]]
   HasOpenAiApiKey: !Not [!Equals [!Ref OpenAiApiKey, ""]]
+  HasMedia: !Not [!Equals [!Ref MediaPublicKey, ""]]
 
 Resources:
   # Registered accounts and password hashes (one JSON object). Private, encrypted, versioned, kept on stack delete.
@@ -131,6 +140,72 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: "false"
+          # The media CDN reads pictures and videos on posts, and nothing else in the bucket.
+          - !If
+            - HasMedia
+            - Sid: AllowMediaDistribution
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource: !Sub ${MaterialsBucket.Arn}/materials/posts/*
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${MediaDistribution}
+            - !Ref AWS::NoValue
+
+  # Media CDN for pictures and videos on forum posts. The bucket stays private (Origin Access Control); every request needs
+  # a CloudFront signed URL (trusted key group), which the API issues after checking the viewer can read the post.
+  MediaPublicKeyResource:
+    Type: AWS::CloudFront::PublicKey
+    Condition: HasMedia
+    Properties:
+      PublicKeyConfig:
+        Name: !Sub ${AWS::StackName}-media-key
+        CallerReference: !Sub ${AWS::StackName}-media-key
+        EncodedKey: !Ref MediaPublicKey
+
+  MediaKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Condition: HasMedia
+    Properties:
+      KeyGroupConfig:
+        Name: !Sub ${AWS::StackName}-media
+        Items: [!Ref MediaPublicKeyResource]
+
+  MediaOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: HasMedia
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-media-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  MediaDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: HasMedia
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} post pictures and videos (signed URLs)
+        HttpVersion: http2and3
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: materials
+            DomainName: !GetAtt MaterialsBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt MediaOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: materials
+          ViewerProtocolPolicy: https-only
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: false
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          TrustedKeyGroups: [!Ref MediaKeyGroup]
 
   Role:
     Type: AWS::IAM::Role
@@ -168,6 +243,17 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt MaterialsBucket.Arn
+        # Reads the media CDN's private signing key; nothing else in Parameter Store.
+        - !If
+          - HasMedia
+          - PolicyName: media-signing-key
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: ssm:GetParameter
+                  Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${MediaPrivateKeyParameter}
+          - !Ref AWS::NoValue
         - PolicyName: auth-store
           PolicyDocument:
             Version: "2012-10-17"
@@ -256,6 +342,9 @@ Resources:
           SEED_PASSWORD: !If [HasSeedPassword, !Ref SeedPassword, !Ref AWS::NoValue]
           MAIL_FROM: !If [HasMailFrom, !Ref MailFrom, !Ref AWS::NoValue]
           OPENAI_API_KEY: !If [HasOpenAiApiKey, !Ref OpenAiApiKey, !Ref AWS::NoValue]
+          MEDIA_CDN_DOMAIN: !If [HasMedia, !GetAtt MediaDistribution.DomainName, !Ref AWS::NoValue]
+          MEDIA_KEY_PAIR_ID: !If [HasMedia, !Ref MediaPublicKeyResource, !Ref AWS::NoValue]
+          MEDIA_PRIVATE_KEY_PARAMETER: !If [HasMedia, !Ref MediaPrivateKeyParameter, !Ref AWS::NoValue]
 
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -288,3 +377,6 @@ Outputs:
     Value: !Ref AuthStoreBucket
   MaterialsBucket:
     Value: !Ref MaterialsBucket
+  MediaDomain:
+    Condition: HasMedia
+    Value: !GetAtt MediaDistribution.DomainName
